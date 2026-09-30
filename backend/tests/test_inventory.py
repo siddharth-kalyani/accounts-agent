@@ -103,6 +103,87 @@ async def test_counts_corrections_hidden_spend_and_csv_attribution(db, people, o
     assert not any(p["productId"] == product for p in (await i.get_pantry(db, manager, office))["products"])
 
 
+def on_hand(pantry, name):
+    return float(next(p for p in pantry["products"] if p["name"] == name)["onHand"])
+
+
+async def test_first_day_purchases_count_toward_on_hand(db, people):
+    admin = people["admin"]
+    office = (await i.create_office(db, admin, "First day", admin["id"]))["id"]
+    pantry = await i.get_pantry(db, admin, office, series=False)
+    milk = next(p for p in pantry["products"] if p["name"] == "Milk")["productId"]
+    # The opening zero count is dated the day before, so it cannot swallow day-one purchases.
+    opening = await db.get("SELECT counted_on FROM pantry_count WHERE product_id = ?", milk)
+    assert opening["counted_on"] == "2026-09-19" and pantry["today"] == "2026-09-20"
+    await i.create_purchase(db, admin, office, {"productId": milk, "date": "2026-09-20", "packs": 60, "pricePerPack": "66"})
+    assert on_hand(await i.get_pantry(db, admin, office, series=False), "Milk") == 60
+    added = (await i.create_product(db, admin, office, "Oats"))["productId"]
+    await i.create_purchase(db, admin, office, {"productId": added, "date": "2026-09-20", "packs": 4, "pricePerPack": "30"})
+    assert on_hand(await i.get_pantry(db, admin, office, series=False), "Oats") == 4
+    # A real count on the same day still includes that day's purchases.
+    await i.upsert_count(db, admin, office, {"productId": milk, "date": "2026-09-20", "packs": 50})
+    assert on_hand(await i.get_pantry(db, admin, office, series=False), "Milk") == 50
+
+
+async def test_old_opening_counts_are_repaired_once_and_real_counts_stay(db, people):
+    admin = people["admin"]
+    office = (await i.create_office(db, admin, "Old style", admin["id"]))["id"]
+    products = {p["name"]: p["productId"] for p in (await i.get_pantry(db, admin, office, series=False))["products"]}
+    # Recreate what earlier versions wrote: the zero opening count on the product's first day.
+    await db.run("UPDATE pantry_count SET counted_on = '2026-09-20' WHERE product_id IN (SELECT id FROM pantry_product WHERE office_id = ?)", office)
+    await i.create_purchase(db, admin, office, {"productId": products["Milk"], "date": "2026-09-20", "packs": 60, "pricePerPack": "66"})
+    assert on_hand(await i.get_pantry(db, admin, office, series=False), "Milk") == 0
+    # A person really counted zero Tea that day; that count must not move.
+    await i.upsert_count(db, admin, office, {"productId": products["Tea"], "date": "2026-09-20", "packs": 0})
+    for _ in range(2):
+        await c.repair_opening_counts(db)
+    dates = {row["product_id"]: row["counted_on"] for row in await db.all("SELECT product_id, counted_on FROM pantry_count WHERE product_id IN (SELECT id FROM pantry_product WHERE office_id = ?)", office)}
+    assert dates[products["Milk"]] == "2026-09-19" and dates[products["Coffee"]] == "2026-09-19"
+    assert dates[products["Tea"]] == "2026-09-20"
+    assert on_hand(await i.get_pantry(db, admin, office, series=False), "Milk") == 60
+
+
+async def test_an_office_can_have_several_office_managers(db, people):
+    admin, meera, rohan = people["admin"], people["manager"], people["other"]
+    office = await i.create_office(db, admin, "Shared office", manager_ids=[meera["id"], rohan["id"], meera["id"]])
+    assert office["managerId"] == meera["id"]
+    managers = await db.all("SELECT person_id FROM role_grant WHERE office_id = ? AND role = 'office_manager' AND deleted_at IS NULL", office["id"])
+    assert {row["person_id"] for row in managers} == {meera["id"], rohan["id"]}
+    for manager in (meera, rohan):
+        created = await i.create_product(db, (await a.sign_in(db, manager["email"]))["person"], office["id"], f"Tea for {manager['displayName']}")
+        assert created["productId"]
+    with fails(422, "Meera Patel is already the Office Manager at Shared office."):
+        await i.assign_office_manager(db, admin, office["id"], meera["id"])
+    third = await a.save_access(db, admin, {"signInName": "third.manager@intuitive.AI", "displayName": "Third Manager", "role": "office_manager", "officeId": office["id"]})
+    assert any(g["role"] == "office_manager" and g["officeId"] == office["id"] for g in third["grants"])
+    with fails(422, "Choose the Office Managers"):
+        await i.create_office(db, admin, "Bad list", manager_ids="not-a-list")
+    with fails(422, "Choose an Office Manager"):
+        await i.create_office(db, admin, "Unknown person", manager_ids=["00000000-0000-4000-8000-000000000000"])
+
+
+async def test_settings_preview_is_read_only_and_super_admin_only(db, people, offices):
+    admin, office = people["admin"], offices["Ahmedabad"]
+    saved = await c.settings(db)
+    live = {p["productId"]: p["expectedDate"] for p in (await i.get_pantry(db, admin, office, series=False))["products"] if not p["deletedAt"]}
+    unchanged = await i.preview_settings(db, admin, office, {})
+    assert {r["productId"]: r["before"] for r in unchanged["products"]} == live
+    assert all(r["before"] == r["after"] for r in unchanged["products"])
+    closed = await i.preview_settings(db, admin, office, {"weekendWeight": 0})
+    full = await i.preview_settings(db, admin, office, {"weekendWeight": 1})
+    assert closed["settings"] == {"weekendWeight": 0, "lookbackMonths": saved["lookbackMonths"]}
+    # Counting weekends as full days uses stock faster, so some run-out date moves.
+    assert any(a["after"] != b["after"] for a, b in zip(closed["products"], full["products"]) if a["after"])
+    assert await c.settings(db) == saved
+    assert {p["productId"]: p["expectedDate"] for p in (await i.get_pantry(db, admin, office, series=False))["products"] if not p["deletedAt"]} == live
+    with fails(422, "Weekend weight is from 0 to 1."):
+        await i.preview_settings(db, admin, office, {"weekendWeight": 2})
+    with fails(422, "Lookback is a whole number"):
+        await i.preview_settings(db, admin, office, {"lookbackMonths": 1.5})
+    with fails(403):
+        await i.preview_settings(db, people["manager"], office, {"weekendWeight": 1})
+
+
 @pytest.mark.parametrize("name", ["..", ".", "../file.pdf", "/file.pdf", "a/b.pdf", "a\\b", "", "x" * 161])
 def test_storage_names_cannot_escape_receipt_directory(name):
     with pytest.raises(ValueError):

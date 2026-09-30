@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 
 function focusable(root) {
   return [...root.querySelectorAll("a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])")]
-    .filter((node) => !node.hasAttribute("disabled") && node.getAttribute("aria-hidden") !== "true");
+    // Controls hidden by CSS (display: none) cannot take focus, so they are not stops.
+    .filter((node) => !node.hasAttribute("disabled") && node.getAttribute("aria-hidden") !== "true" && node.getClientRects().length > 0);
 }
 
 export function useFocusTrap(active, onEscape) {

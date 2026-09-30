@@ -19,11 +19,21 @@ async def list_offices(db, person):
     return [{"id": r["id"], "name": r["name"]} for r in rows]
 
 
+def opening_count_date(today):
+    """The automatic zero count is dated the day before a product starts.
+
+    A count on a date already includes that day's purchases, so an opening
+    count dated the same day would swallow every first-day purchase and leave
+    on-hand at zero. Dated the day before, first-day purchases add to it.
+    """
+    return calc.add_days(today, -1)
+
+
 async def insert_product(db, actor, office_id, name, at=None):
     at = at or stamp()
     product_id = new_id()
     await db.run("INSERT INTO pantry_product (id, office_id, name, reorder_level, warning_effective_days, created_by, created_at) VALUES (?, ?, ?, 0, 5, ?, ?)", product_id, office_id, name, actor["id"], at)
-    await db.run("INSERT INTO pantry_count (id, product_id, counted_on, packs, created_by, created_at) VALUES (?, ?, ?, 0, ?, ?)", new_id(), product_id, calc.today_in_india(now()), actor["id"], at)
+    await db.run("INSERT INTO pantry_count (id, product_id, counted_on, packs, created_by, created_at) VALUES (?, ?, ?, 0, ?, ?)", new_id(), product_id, opening_count_date(calc.today_in_india(now())), actor["id"], at)
     return product_id
 
 
@@ -39,8 +49,11 @@ async def name_manager(db, actor, office, manager):
     await log(db, actor["id"], "grant.grant", "person", manager["id"], office["id"], f"Named {manager['display_name']} Office Manager at {office['name']}.")
 
 
+MAX_MANAGERS = 20
+
+
 @transactional
-async def create_office(db, person, name, manager_id=None):
+async def create_office(db, person, name, manager_id=None, manager_ids=None):
     person = await live_person(db, person)
     if not person["superAdmin"]:
         raise HttpError(403, "Only a Super Admin can add an office.")
@@ -49,18 +62,29 @@ async def create_office(db, person, name, manager_id=None):
         raise HttpError(422, "An office name is required, up to 80 characters.")
     if await db.get("SELECT id FROM office WHERE name = ? COLLATE NOCASE", clean):
         raise HttpError(422, "An office with that name already exists.")
-    manager = await active_person(db, manager_id) if manager_id else None
-    if manager_id and not manager:
-        raise HttpError(422, "Choose an Office Manager from the people on this pantry.")
+    # An office can have several Office Managers. `managerId` stays accepted
+    # for existing callers; `managerIds` adds more. Order is kept, repeats dropped.
+    if manager_ids is not None and (not isinstance(manager_ids, list) or not all(isinstance(value, str) for value in manager_ids)):
+        raise HttpError(422, "Choose the Office Managers from the people on this pantry.")
+    wanted = list(dict.fromkeys([value for value in [manager_id, *(manager_ids or [])] if value]))
+    if len(wanted) > MAX_MANAGERS:
+        raise HttpError(422, f"Choose at most {MAX_MANAGERS} Office Managers.")
+    managers = []
+    for value in wanted:
+        manager = await active_person(db, value)
+        if not manager:
+            raise HttpError(422, "Choose an Office Manager from the people on this pantry.")
+        managers.append(manager)
     at, office_id = stamp(), new_id()
     await db.run("INSERT INTO office (id, name, created_by, created_at) VALUES (?, ?, ?, ?)", office_id, clean, person["id"], at)
     await log(db, person["id"], "office.create", "office", office_id, office_id, f"Added the {clean} office.")
     for starter in STARTERS:
         product_id = await insert_product(db, person, office_id, starter, at)
         await log(db, person["id"], "product.create", "product", product_id, office_id, f"Opened {starter} at {clean}.")
-    if manager:
+    for manager in managers:
         await name_manager(db, person, {"id": office_id, "name": clean}, manager)
-    return {"id": office_id, "name": clean, "managerId": manager["id"] if manager else None, "managerName": manager["display_name"] if manager else None}
+    first = managers[0] if managers else None
+    return {"id": office_id, "name": clean, "managerId": first["id"] if first else None, "managerName": first["display_name"] if first else None}
 
 
 @transactional
@@ -116,7 +140,7 @@ def validate_month(month):
 
 
 @scoped
-async def get_pantry(db, person, office_id, month=None, *, series=True):
+async def get_pantry(db, person, office_id, month=None, *, series=True, config=None):
     person = await live_person(db, person)
     require_view(person, office_id)
     office = await office_by_id(db, office_id)
@@ -124,7 +148,7 @@ async def get_pantry(db, person, office_id, month=None, *, series=True):
         raise HttpError(404, "Office not found.")
     today = calc.today_in_india(now())
     selected = validate_month(month or today[:7])
-    config, names = await settings(db), await names_by_id(db)
+    config, names = config or await settings(db), await names_by_id(db)
     frame = calc.next_month_frame(config, today)
     products = []
     for product in await db.all("SELECT * FROM pantry_product WHERE office_id = ? ORDER BY created_at, name", office_id):
@@ -488,18 +512,38 @@ async def list_purchases(db, person, office_id, month):
     return [{"purchaseId": r["id"], "product": r["name"], "date": r["purchased_on"], "packs": r["packs"], "pricePerPack": r["price_per_pack"], "amount": calc.money(r["packs"], r["price_per_pack"]), "enteredBy": r["display_name"] or "Unknown", "receiptName": r["file_name"] or None} for r in rows]
 
 
-@transactional
-async def update_settings(db, person, body):
-    person = await live_person(db, person)
-    if not person["superAdmin"]:
-        raise HttpError(403, "Only a Super Admin can change the weekend weight or the lookback.")
-    current = await settings(db)
+def checked_settings(current, body):
     weight = number(body["weekendWeight"]) if body.get("weekendWeight") is not None else current["weekendWeight"]
     lookback = number(body["lookbackMonths"]) if body.get("lookbackMonths") is not None else current["lookbackMonths"]
     if not math.isfinite(weight) or not 0 <= weight <= 1:
         raise HttpError(422, "Weekend weight is from 0 to 1.")
     if not math.isfinite(lookback) or lookback != int(lookback) or not 2 <= lookback <= 36:
         raise HttpError(422, "Lookback is a whole number of months from 2 to 36.")
+    return weight, lookback
+
+
+@scoped
+async def preview_settings(db, person, office_id, body):
+    """Expected run-out dates now and with proposed settings. Nothing is saved."""
+    person = await live_person(db, person)
+    if not person["superAdmin"]:
+        raise HttpError(403, "Only a Super Admin can change the weekend weight or the lookback.")
+    current = await settings(db)
+    weight, lookback = checked_settings(current, body)
+    proposed = {**current, "weekendWeight": weight, "lookbackMonths": int(lookback)}
+    before = await get_pantry(db, person, office_id, series=False)
+    after = await get_pantry(db, person, office_id, series=False, config=proposed)
+    changed = {p["productId"]: p for p in after["products"]}
+    rows = [{"productId": p["productId"], "name": p["name"], "before": p["expectedDate"], "after": changed[p["productId"]]["expectedDate"], "beforeStatus": p["status"], "afterStatus": changed[p["productId"]]["status"]} for p in before["products"] if not p["deletedAt"] and p["productId"] in changed]
+    return {"officeId": office_id, "officeName": before["officeName"], "today": before["today"], "settings": {"weekendWeight": weight, "lookbackMonths": int(lookback)}, "products": rows}
+
+
+@transactional
+async def update_settings(db, person, body):
+    person = await live_person(db, person)
+    if not person["superAdmin"]:
+        raise HttpError(403, "Only a Super Admin can change the weekend weight or the lookback.")
+    weight, lookback = checked_settings(await settings(db), body)
     await db.run("UPDATE company_setting SET weekend_weight = ?, lookback_months = ? WHERE id = 1", weight, int(lookback))
     await log(db, person["id"], "settings.update", "settings", "00000000-0000-4000-8000-000000000001", None, f"Set weekend weight to {text(weight)} and lookback to {text(lookback)} months.")
     return await settings(db)

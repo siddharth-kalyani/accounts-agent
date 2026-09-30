@@ -10,10 +10,23 @@ export async function extendedWorkflows({ page, browser, app }) {
   await nav('Offices');
   const form = page.locator('.office-form');
   await form.getByLabel('Office name', { exact: true }).fill('Browser Annex');
-  await form.getByLabel('Search people').fill(app.manager.email);
-  await form.getByRole('button', { name: new RegExp(app.manager.email.replaceAll('.', '\\.')) }).click();
+  // An office can start with more than one Office Manager.
+  const pickPerson = async (email) => {
+    await form.getByLabel('Search people').fill(email);
+    await form.getByRole('button', { name: new RegExp(email.replaceAll('.', '\\.')) }).click();
+  };
+  await pickPerson(app.manager.email);
+  await pickPerson(app.otherManager.email);
+  await expect(form.getByLabel('Chosen Office Managers').locator('.role-chip')).toHaveCount(2);
   await form.getByRole('button', { name: 'Add office', exact: true }).click();
   await expect(page.locator('.office-pick > button')).toHaveText('Browser Annex');
+  const managersAt = await page.evaluate(async (officeName) => {
+    const roster = await fetch('/api/access', { credentials: 'same-origin' }).then((response) => response.json());
+    const offices = await fetch('/api/offices', { credentials: 'same-origin' }).then((response) => response.json());
+    const office = offices.offices.find((item) => item.name === officeName);
+    return roster.people.filter((person) => person.grants.some((grant) => grant.role === 'office_manager' && grant.officeId === office.id)).map((person) => person.email).sort();
+  }, 'Browser Annex');
+  assert.deepEqual(managersAt, [app.manager.email, app.otherManager.email].sort());
   await expect(page.getByRole('heading', { name: 'Coffee', exact: true })).toBeVisible();
   await office('All offices');
   await expect(page.getByRole('heading', { name: 'Browser Annex', exact: true })).toBeVisible();
@@ -25,6 +38,11 @@ export async function extendedWorkflows({ page, browser, app }) {
   await expect(page.locator('.record-form').getByLabel('Name', { exact: true })).toHaveValue('');
   await page.locator('.side').getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('Lookback months').fill('4');
+  await page.getByLabel('Weekend weight').fill('0.3');
+  // Before saving, the preview shows how run-out dates would move. Nothing is saved yet.
+  await expect(page.locator('.settings-preview')).toContainText(/→|No run-out date changes/);
+  await nav('Full day');
+  await expect(page.getByLabel('Weekend weight')).toHaveValue('1');
   await page.getByLabel('Weekend weight').fill('0.3');
   await nav('Save');
   await expect(page.getByLabel('Lookback months')).toHaveValue('4');
@@ -45,9 +63,15 @@ export async function extendedWorkflows({ page, browser, app }) {
   await expect(page.getByRole('button', { name: 'Stock', exact: true })).toBeVisible();
   await nav('Activity');
   await expect(page.locator('main.page')).toContainText('Browser oats');
+  await expect(page.locator('.activity-date').first()).toBeVisible();
+  await page.getByRole('group', { name: 'Show activity' }).getByRole('button', { name: 'Products', exact: true }).click();
+  await expect(page.locator('main.page')).toContainText('Browser oats');
+  await expect(page.locator('.activity-day li').filter({ hasText: /Entered \d+ packs/ })).toHaveCount(0);
+  await page.getByRole('group', { name: 'Show activity' }).getByRole('button', { name: 'All', exact: true }).click();
 
   await nav('Open assistant');
   const chat = page.getByRole('dialog', { name: 'Assistant' });
+  await expect(chat.getByRole('group', { name: 'Try asking' })).toBeVisible();
   const send = async text => {
     await chat.getByLabel('Message the assistant').fill(text);
     await chat.getByRole('button', { name: 'Send', exact: true }).click();
@@ -89,17 +113,22 @@ export async function extendedWorkflows({ page, browser, app }) {
   await page.getByRole('button', { name: 'Clear search', exact: true }).click();
   await expect(page.locator('.access-list li').filter({ hasText: app.manager.email })).toHaveCount(1);
   const email = 'browser.invitee@intuitive.AI';
-  await page.getByLabel('Email to invite').fill(email);
-  await page.locator('.access-form').first().getByLabel('Name', { exact: true }).fill('Browser Invitee');
-  await nav('Invite');
-  const temporary = await page.locator('.invite-secret code').innerText();
-  const grant = page.locator('.access-form').last();
+  await nav('Invite person');
+  const drawer = page.getByRole('dialog', { name: 'Invite or give access' });
+  await drawer.getByLabel('Email to invite').fill(email);
+  await drawer.locator('.access-form').first().getByLabel('Name', { exact: true }).fill('Browser Invitee');
+  await drawer.getByRole('button', { name: 'Invite', exact: true }).click();
+  const temporary = await drawer.locator('.invite-secret code').innerText();
+  const grant = drawer.locator('.access-form').last();
+  await expect(grant.getByLabel('Sign-in name')).toHaveValue(email);
   await grant.getByLabel('Name', { exact: true }).fill('Browser Invitee');
   await grant.getByLabel('Sign-in name').fill(email);
   await grant.locator('select').first().selectOption('accounts');
   await grant.locator('select').last().selectOption({ label: 'Ahmedabad' });
-  await nav('Save access');
+  await drawer.getByRole('button', { name: 'Save access', exact: true }).click();
   await expect(page.locator('main .notice')).toHaveText('Access saved.');
+  await drawer.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(drawer).toHaveCount(0);
   const invited = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const user = await invited.newPage();
@@ -122,18 +151,28 @@ export async function extendedWorkflows({ page, browser, app }) {
     await user.getByRole('button', { name: 'Record', exact: true }).click();
     await expect(user.getByText(/It cannot change the pantry/)).toBeVisible();
     const person = page.locator('.access-list li').filter({ hasText: email });
+    const undoToast = (text) => page.locator('.toast').filter({ hasText: text });
+    // Undo puts the role straight back and nothing is sent.
     await person.getByRole('button', { name: /Remove Accounts/ }).click();
-    await person.getByRole('button', { name: 'Remove this role', exact: true }).click();
+    await expect(person).toContainText('No role yet');
+    await undoToast('Removed Accounts').getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(person.getByRole('button', { name: /Remove Accounts/ })).toBeVisible();
+    // Closing the toast sends the removal.
+    await person.getByRole('button', { name: /Remove Accounts/ }).click();
+    const removal = page.waitForResponse((response) => response.request().method() === 'DELETE' && /\/api\/access\/[^/]+\/grants\//.test(response.url()));
+    await undoToast('Removed Accounts').getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal((await removal).status(), 200);
     await expect(person).toContainText('No role yet');
     await user.reload();
     await expect(user.getByText(/No office/).first()).toBeVisible();
     await person.getByRole('button', { name: 'Turn off', exact: true }).click();
-    await person.getByRole('button', { name: 'Turn off now', exact: true }).click();
     await expect(person).toContainText('Turned off');
+    const off = page.waitForResponse((response) => response.request().method() === 'POST' && /\/api\/access\/[^/]+\/active$/.test(response.url()));
+    await undoToast('Turned off').getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal((await off).status(), 200);
     await user.reload();
     await expect(user.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
     await person.getByRole('button', { name: 'Turn on', exact: true }).click();
-    await person.getByRole('button', { name: 'Turn on now', exact: true }).click();
     await expect(person.getByRole('button', { name: 'Turn off' })).toBeVisible();
     await user.reload();
     await expect(user.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();

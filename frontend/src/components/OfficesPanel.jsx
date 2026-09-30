@@ -1,24 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { IconSearch } from "../icons.jsx";
+import { useMounted } from "../hooks.js";
+import { IconCheck, IconClose, IconSearch } from "../icons.jsx";
 import { PickMenu } from "./PickMenu.jsx";
+import { EmptyState } from "./Illustration.jsx";
+import { Skeleton } from "./Skeleton.jsx";
 
-export function OfficesPanel({ offices, onChanged, onToast }) {
+export function OfficesPanel({ offices, onChanged, onToast, onUndoable }) {
   const [people, setPeople] = useState([]);
   const [access, setAccess] = useState([]);
   const [name, setName] = useState("");
-  const [personId, setPersonId] = useState("");
+  // An office can have several Office Managers; the first chosen is listed first.
+  const [personIds, setPersonIds] = useState([]);
   const [personQuery, setPersonQuery] = useState("");
   const [names, setNames] = useState({});
   const [assign, setAssign] = useState({});
-  const [pending, setPending] = useState(null);
+  const [removed, setRemoved] = useState(() => new Set());
+  const [peopleLoaded, setPeopleLoaded] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const mounted = useMounted();
 
   async function loadPeople() {
     const [directory, roster] = await Promise.all([api("/api/people"), api("/api/access")]);
+    if (!mounted.current) return;
     setPeople(directory.people);
     setAccess(roster.people);
+    setPeopleLoaded(true);
   }
 
   useEffect(() => {
@@ -27,10 +35,15 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
 
   const needle = personQuery.trim().toLowerCase();
   const choices = people.filter((person) => !needle || `${person.displayName} ${person.email}`.toLowerCase().includes(needle));
+  const chosenPeople = personIds.map((id) => people.find((person) => person.id === id)).filter(Boolean);
+
+  function togglePerson(id) {
+    setPersonIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+  }
 
   function managers(officeId) {
     return access.flatMap((person) => (person.grants || [])
-      .filter((grant) => grant.role === "office_manager" && grant.officeId === officeId)
+      .filter((grant) => grant.role === "office_manager" && grant.officeId === officeId && !removed.has(grant.id))
       .map((grant) => ({ ...grant, personId: person.id, displayName: person.displayName, email: person.email })));
   }
 
@@ -40,9 +53,9 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
     setBusy(true);
     setError("");
     try {
-      const created = await api("/api/offices", { method: "POST", body: { name, managerId: personId } });
+      const created = await api("/api/offices", { method: "POST", body: { name, managerIds: personIds } });
       setName("");
-      setPersonId("");
+      setPersonIds([]);
       setPersonQuery("");
       await onChanged(created);
       await loadPeople();
@@ -89,21 +102,27 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
     }
   }
 
-  async function removeManager() {
-    if (!pending) return;
-    setBusy(true);
+  // Hidden at once; the removal is sent when the Undo toast closes.
+  function removeManager(manager, office) {
     setError("");
-    try {
-      await api(`/api/access/${pending.personId}/grants/${pending.grantId}`, { method: "DELETE" });
-      setPending(null);
-      await loadPeople();
-      await onChanged();
-      onToast?.("Office Manager removed.");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+    setRemoved((current) => new Set(current).add(manager.id));
+    onUndoable({
+      text: `Removed ${manager.displayName} as Office Manager at ${office.name}.`,
+      commit: async ({ keepalive } = {}) => {
+        await api(`/api/access/${manager.personId}/grants/${manager.id}`, { method: "DELETE", keepalive });
+        if (keepalive) return;
+        await loadPeople();
+        await onChanged();
+      },
+      revert: () => {
+        if (!mounted.current) return;
+        setRemoved((current) => {
+          const next = new Set(current);
+          next.delete(manager.id);
+          return next;
+        });
+      },
+    });
   }
 
   return (
@@ -119,7 +138,22 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
           <input value={name} maxLength={80} placeholder="For example, Pune" onChange={(event) => setName(event.target.value)} required />
         </label>
         <div className="field">
-          <span>Office Manager</span>
+          <span>
+            Office Managers
+            <span className="field-hint">{personIds.length ? ` · ${personIds.length} chosen` : " · choose one or more"}</span>
+          </span>
+          {chosenPeople.length ? (
+            <div className="chosen-chips" aria-label="Chosen Office Managers">
+              {chosenPeople.map((person) => (
+                <span className="role-chip" key={person.id}>
+                  {person.displayName}
+                  <button type="button" aria-label={`Remove ${person.displayName}`} title={`Remove ${person.displayName}`} onClick={() => togglePerson(person.id)}>
+                    <IconClose />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="pick-list">
             <span className="search-field">
               <IconSearch />
@@ -131,23 +165,27 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
               />
             </span>
             <div className="person-list">
-              {people.length === 0 && !error ? <p>Loading people.</p> : null}
+              {!peopleLoaded && !error ? <Skeleton label="Loading people." rows={2} /> : null}
+              {peopleLoaded && !people.length ? (
+                <EmptyState art="people" className="compact" title="No one to choose yet">Invite someone from Access first.</EmptyState>
+              ) : null}
               {choices.map((person) => (
                 <button
                   key={person.id}
                   type="button"
-                  aria-pressed={person.id === personId}
-                  onClick={() => setPersonId(person.id)}
+                  aria-pressed={personIds.includes(person.id)}
+                  onClick={() => togglePerson(person.id)}
                 >
                   <span>{person.displayName}</span>
                   <small>{person.email}</small>
+                  {personIds.includes(person.id) ? <span className="pick-check" aria-hidden="true"><IconCheck /></span> : null}
                 </button>
               ))}
               {people.length > 0 && !choices.length ? <p>No person matches that search.</p> : null}
             </div>
           </div>
         </div>
-        <button className="solid" type="submit" disabled={busy || !name.trim() || !personId}>{busy ? "Saving…" : "Add office"}</button>
+        <button className="solid" type="submit" disabled={busy || !name.trim() || !personIds.length}>{busy ? "Saving…" : "Add office"}</button>
       </form>
 
       <div className="office-list">
@@ -187,20 +225,11 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
                           <strong>{manager.displayName}</strong>
                           <small>{manager.email}</small>
                         </span>
-                        <button className="ghost small" type="button" onClick={() => setPending(manager)}>Remove</button>
+                        <button className="ghost small" type="button" onClick={() => removeManager(manager, office)}>Remove</button>
                       </li>
                     ))}
                   </ul>
-                ) : <p className="note">No Office Manager yet.</p>}
-                {pending && current.some((manager) => manager.id === pending.id) ? (
-                  <div className="confirm-card">
-                    <p>Remove {pending.displayName} as Office Manager at {office.name}?</p>
-                    <div className="row-actions">
-                      <button className="solid" type="button" disabled={busy} onClick={removeManager}>Remove manager</button>
-                      <button className="ghost" type="button" onClick={() => setPending(null)}>Keep</button>
-                    </div>
-                  </div>
-                ) : null}
+                ) : <p className="note">No Office Manager yet. Only a Super Admin can record here until one is added.</p>}
                 <div className="inline-form">
                   <div className="field">
                     <span>Add an Office Manager</span>
@@ -221,7 +250,9 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
             </article>
           );
         })}
-        {!offices.length ? <p className="note">No office yet.</p> : null}
+        {!offices.length ? (
+          <EmptyState art="office" title="No office yet.">Add the first office above. It starts with Coffee, Milk, Sugar, Tea, and Sticks.</EmptyState>
+        ) : null}
       </div>
     </section>
   );

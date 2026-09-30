@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { indiaDate, monthLabel, rupee } from "../api.js";
+import { indiaDate, monthLabel, packs, ranOutOn, rupee, runsOutWhen, stockState, weeklyUse } from "../api.js";
+import { DateField } from "./DateField.jsx";
 
 const VB_W = 680;
 const VB_H = 280;
@@ -36,14 +37,14 @@ export function PantryCharts({ pantry, range, onRange }) {
             ))}
         </div>
         <div className="runway">
-          <RunwayCopy product={selected} />
+          <RunwayCopy product={selected} today={pantry.today} settings={pantry.settings} />
           <Runway product={selected} today={pantry.today} range={range} />
         </div>
       </article>
 
       <div className="chart-split">
         <article className="card">
-          <h2>Packs behind the burn</h2>
+          <h2>Packs bought each month</h2>
           <MonthColumns history={history} today={pantry.today} />
         </article>
         <article className="card">
@@ -98,7 +99,7 @@ export function OfficeCompare({ summary }) {
   );
 }
 
-function RunwayCopy({ product }) {
+function RunwayCopy({ product, today, settings }) {
   if (!product.burnRatePerEffectiveDay) {
     return (
       <div className="runway-copy">
@@ -107,15 +108,20 @@ function RunwayCopy({ product }) {
       </div>
     );
   }
+  const out = stockState(product) === "out";
+  const since = out ? ranOutOn(product) : null;
   return (
     <div className="runway-copy">
       <p className="runway-kicker">{product.name}</p>
-      <p className="runway-stat">{product.burnRatePerEffectiveDay}</p>
-      <p>packs per effective day</p>
+      <p className="runway-label">{out ? "Out of stock" : "Runs out"}</p>
+      <p className="runway-stat runway-date">{out ? (since ? indiaDate(since) : "Now") : indiaDate(product.expectedDate)}</p>
+      <p>{out ? (since ? "Last recorded stock ran out on this day." : "Record a count or a purchase.") : runsOutWhen(product, today)}</p>
       <dl>
-        <div><dt>On hand</dt><dd>{product.onHand}</dd></div>
-        <div><dt>Cover</dt><dd>{product.coverEffectiveDays} effective days</dd></div>
-        <div><dt>Expected</dt><dd>{indiaDate(product.expectedDate)}</dd></div>
+        <div><dt>On hand</dt><dd>{out ? "None left" : packs(product.onHand)}</dd></div>
+        <div>
+          <dt>Uses</dt>
+          <dd title={`${product.burnRatePerEffectiveDay} packs per working day; weekends count as ${settings?.weekendWeight ?? 0.2} of a day`}>{weeklyUse(product, settings)}</dd>
+        </div>
       </dl>
     </div>
   );
@@ -223,7 +229,7 @@ function Runway({ product, today, range }) {
           }}
         >
           <strong>{axisDate(hover.date)}</strong>
-          <span>{hover.onHand} packs</span>
+          <span>{Number(hover.onHand) <= 0 ? (hover.projected ? "Would be out" : "Out of stock") : `${hover.onHand} packs`}</span>
           <span>{hover.marker === "purchase" ? "Purchase" : hover.projected ? "If no further purchase" : "On hand"}</span>
         </div>
       ) : null}
@@ -320,10 +326,10 @@ export function DateRange({ range, onRange, label = "Dates" }) {
     <fieldset className="dates">
       <legend className="sr-only">{label}</legend>
       <label>From
-        <input type="date" value={range.from} max={range.to || undefined} onChange={(event) => onRange({ ...range, from: event.target.value })} />
+        <DateField value={range.from} max={range.to || undefined} onChange={(from) => { if (from) onRange({ ...range, from }); }} />
       </label>
       <label>To
-        <input type="date" value={range.to} min={range.from || undefined} onChange={(event) => onRange({ ...range, to: event.target.value })} />
+        <DateField value={range.to} min={range.from || undefined} onChange={(to) => { if (to) onRange({ ...range, to }); }} />
       </label>
     </fieldset>
   );

@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
 import { api, indiaDate, rupee } from "../api.js";
 import { useFocusTrap } from "../focus.js";
+import { useMounted } from "../hooks.js";
 import { IconClose } from "../icons.jsx";
+import { DateField } from "./DateField.jsx";
+import { EmptyState } from "./Illustration.jsx";
+import { Skeleton } from "./Skeleton.jsx";
 
-export function Purchases({ officeId, month, revision, canWrite, onChanged, onToast }) {
-  const [open, setOpen] = useState(false);
+export function Purchases({ officeId, officeName, month, monthName, revision, canWrite, onChanged, onToast, onUndoable, onRecord }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [removing, setRemoving] = useState(null);
+  const [hidden, setHidden] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
+  const mounted = useMounted();
   const trap = useFocusTrap(Boolean(preview), () => closePreview());
 
+  async function reload() {
+    const data = await api(`/api/offices/${officeId}/purchases?month=${encodeURIComponent(month)}`);
+    if (mounted.current) setRows(data.purchases);
+  }
+
   useEffect(() => {
-    if (!open) return undefined;
     let cancelled = false;
     setRows(null);
     setError("");
@@ -22,7 +30,7 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
       .then((data) => { if (!cancelled) setRows(data.purchases); })
       .catch((err) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
-  }, [open, officeId, month, revision]);
+  }, [officeId, month, revision]);
 
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url);
@@ -92,8 +100,7 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
       onToast?.("Purchase corrected.");
       await onChanged?.();
       setRows(null);
-      const data = await api(`/api/offices/${officeId}/purchases?month=${encodeURIComponent(month)}`);
-      setRows(data.purchases);
+      await reload();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -101,22 +108,30 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
     }
   }
 
-  async function removePurchase() {
-    if (!removing) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api(`/api/purchases/${removing.purchaseId}/delete`, { method: "POST", body: {} });
-      setRemoving(null);
-      onToast?.("Purchase removed.");
-      await onChanged?.();
-      const data = await api(`/api/offices/${officeId}/purchases?month=${encodeURIComponent(month)}`);
-      setRows(data.purchases);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+  function unhide(id) {
+    if (!mounted.current) return;
+    setHidden((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  // The row disappears at once. The delete is only sent when the Undo toast
+  // closes, so Undo needs no restore on the server.
+  function removePurchase(row) {
+    setEditing(null);
+    setHidden((current) => new Set(current).add(row.purchaseId));
+    onUndoable({
+      text: `Removed ${row.packs} ${row.packs === 1 ? "pack" : "packs"} of ${row.product} from ${indiaDate(row.date)}.`,
+      commit: async ({ keepalive } = {}) => {
+        await api(`/api/purchases/${row.purchaseId}/delete`, { method: "POST", body: {}, keepalive });
+        if (keepalive) return;
+        await onChanged?.();
+        await reload();
+      },
+      revert: () => unhide(row.purchaseId),
+    });
   }
 
   async function attach(row, file) {
@@ -139,8 +154,7 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
       });
       onToast?.("Receipt attached.");
       await onChanged?.();
-      const data = await api(`/api/offices/${officeId}/purchases?month=${encodeURIComponent(month)}`);
-      setRows(data.purchases);
+      await reload();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -148,14 +162,29 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
     }
   }
 
+  const shown = (rows || []).filter((row) => !hidden.has(row.purchaseId));
+
   return (
-    <details className="purchase-details" onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Purchases and receipts</summary>
+    <section className="card purchases-card">
+      <div className="card-head">
+        <div>
+          <h2>Purchases and receipts</h2>
+          <p className="lede-small">{officeName} · {monthName}. Change the month at the top.</p>
+        </div>
+      </div>
       {error ? <p className="error" role="alert">{error}</p> : null}
-      {open && !rows && !error ? <p className="note">Loading purchases.</p> : null}
-      {rows?.length === 0 ? <p className="note">No purchases in this month.</p> : null}
+      {!rows && !error ? <Skeleton label="Loading purchases." rows={3} /> : null}
+      {rows && !shown.length ? (
+        <EmptyState
+          art="receipt"
+          title={`No purchases in ${monthName}.`}
+          actions={canWrite && onRecord ? <button className="solid small" type="button" onClick={() => onRecord("purchase")}>Record a purchase</button> : null}
+        >
+          Each purchase you record shows here with its receipt, ready for accounts.
+        </EmptyState>
+      ) : null}
       <div className="purchase-list">
-        {rows?.map((row) => (
+        {shown.map((row) => (
           <article className="purchase-row" key={row.purchaseId}>
             <div>
               <strong>{row.product}</strong>
@@ -176,13 +205,13 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
                   <input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => attach(row, event.target.files?.[0])} />
                 </label>
               ) : null}
-              {canWrite ? <button className="ghost" type="button" onClick={() => { setRemoving(null); setEditing(editing?.purchaseId === row.purchaseId ? null : { ...row, price: row.pricePerPack }); }}>Correct</button> : null}
-              {canWrite ? <button className="texty" type="button" onClick={() => { setEditing(null); setRemoving(row); }}>Remove</button> : null}
+              {canWrite ? <button className="ghost" type="button" onClick={() => setEditing(editing?.purchaseId === row.purchaseId ? null : { ...row, price: row.pricePerPack })}>Correct</button> : null}
+              {canWrite ? <button className="texty" type="button" onClick={() => removePurchase(row)}>Remove</button> : null}
             </div>
             {editing?.purchaseId === row.purchaseId ? (
               <form className="fields purchase-edit" onSubmit={saveCorrection}>
                 <label className="field">Date
-                  <input type="date" value={editing.date} onChange={(event) => setEditing({ ...editing, date: event.target.value })} required />
+                  <DateField value={editing.date} onChange={(date) => setEditing({ ...editing, date })} required />
                 </label>
                 <label className="field">Packs
                   <input inputMode="numeric" value={editing.packs} onChange={(event) => setEditing({ ...editing, packs: event.target.value })} required />
@@ -195,15 +224,6 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
                   <button className="ghost" type="button" onClick={() => setEditing(null)}>Cancel</button>
                 </div>
               </form>
-            ) : null}
-            {removing?.purchaseId === row.purchaseId ? (
-              <div className="confirm-card">
-                <p>Remove this purchase of {row.packs} packs of {row.product} on {indiaDate(row.date)}? This deletes it.</p>
-                <div className="row-actions">
-                  <button className="solid" type="button" disabled={busy} onClick={removePurchase}>Remove purchase</button>
-                  <button className="ghost" type="button" onClick={() => setRemoving(null)}>Keep</button>
-                </div>
-              </div>
             ) : null}
           </article>
         ))}
@@ -222,7 +242,7 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
           </div>
         </div>
       ) : null}
-    </details>
+    </section>
   );
 }
 

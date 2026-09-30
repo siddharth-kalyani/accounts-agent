@@ -135,6 +135,14 @@ export function IconSearch() {
   );
 }
 
+export function IconCheck() {
+  return (
+    <Svg size={16}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </Svg>
+  );
+}
+
 export function IconPlus() {
   return (
     <Svg size={18}>
@@ -171,6 +179,14 @@ export function IconAccess() {
   );
 }
 
+export function IconChevronLeft() {
+  return (
+    <Svg size={18}>
+      <path d="m14.5 6-6 6 6 6" />
+    </Svg>
+  );
+}
+
 export function IconMenu() {
   return (
     <Svg>
@@ -184,6 +200,34 @@ export function IconFile() {
     <Svg>
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
       <path d="M14 3v5h5" />
+    </Svg>
+  );
+}
+
+export function IconReceipt({ size = 20 }) {
+  return (
+    <Svg size={size}>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" />
+      <path d="M9 8h6M9 12h6M9 16h3" />
+    </Svg>
+  );
+}
+
+export function IconCount({ size = 20 }) {
+  return (
+    <Svg size={size}>
+      <rect x="5" y="4" width="14" height="17" rx="1.5" />
+      <path d="M9 4V3h6v1" />
+      <path d="m9 12 2 2 4-4" />
+    </Svg>
+  );
+}
+
+export function IconCalendar() {
+  return (
+    <Svg size={16}>
+      <rect x="4" y="5" width="16" height="15" rx="1.5" />
+      <path d="M8 3v4M16 3v4M4 10h16" />
     </Svg>
   );
 }

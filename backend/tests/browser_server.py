@@ -6,8 +6,22 @@ import socket
 import tempfile
 from pathlib import Path
 import uvicorn
-from pantry import core as c, accounts as a, inventory as i
+from pantry import core as c, accounts as a, inventory as i, http as h
 from pantry.app import create_app
+
+# The browser suite plays several people from one loopback address in about a
+# minute, and every page load (HTML, scripts, fonts, images) counts toward the
+# general per-address budget. Only this disposable test server raises that one
+# budget; sign-in, refresh and chat limits stay as shipped, and test_http.py
+# covers the real limits.
+_check = h.RateLimiter.check
+
+
+def _test_check(self, name, key, limit, window_ms):
+    return _check(self, name, key, limit * 10 if name == "api" else limit, window_ms)
+
+
+h.RateLimiter.check = _test_check
 
 
 async def main():

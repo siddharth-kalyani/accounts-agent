@@ -85,6 +85,37 @@ async def migrate(db):
         await db.exec("ALTER TABLE proposal ADD COLUMN thread_id TEXT")
     if not await db.get("SELECT id FROM company_setting WHERE id = 1"):
         await db.run("INSERT INTO company_setting (id, weekend_weight, lookback_months) VALUES (1, 0.2, 3)")
+    await repair_opening_counts(db)
+
+
+async def repair_opening_counts(db):
+    """Move automatic opening counts written on a product's first day back one day.
+
+    Earlier versions dated the zero opening count on the day the product was
+    added, so that day's purchases were treated as already counted and on-hand
+    stayed at zero. Only untouched automatic counts move: zero packs, written in
+    the same instant and by the same person as the product, dated that product's
+    first day in India, never entered, corrected or removed by anyone, and with
+    no other count on the day before. A moved count no longer matches, so this
+    is safe to run on every start.
+    """
+    from . import calc
+    rows = await db.all(
+        "SELECT c.id, c.product_id, c.counted_on, p.created_at FROM pantry_count c JOIN pantry_product p ON p.id = c.product_id "
+        "WHERE c.packs = 0 AND c.deleted_at IS NULL AND c.created_at = p.created_at AND c.created_by = p.created_by "
+        "AND NOT EXISTS (SELECT 1 FROM operation o WHERE o.entity_type = 'count' AND o.entity_id = c.id)")
+    moves = []
+    for row in rows:
+        started = calc.today_in_india(datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")))
+        if row["counted_on"] == started:
+            moves.append((row, calc.add_days(started, -1)))
+    if not moves:
+        return
+    async with db.transaction():
+        for row, earlier in moves:
+            if await db.get("SELECT id FROM pantry_count WHERE product_id = ? AND counted_on = ?", row["product_id"], earlier):
+                continue
+            await db.run("UPDATE pantry_count SET counted_on = ? WHERE id = ?", earlier, row["id"])
 
 
 async def open_database(file=None, *, seed=None, url=None):

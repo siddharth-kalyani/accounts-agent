@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { api, rupee } from "../api.js";
+import { api, indiaDate, rupee } from "../api.js";
+import { useMounted } from "../hooks.js";
 import { IconFile } from "../icons.jsx";
+import { DateField } from "./DateField.jsx";
 import { ProductMenu } from "./ProductMenu.jsx";
 import { SettingsPanel } from "./SettingsPanel.jsx";
+import { Skeleton } from "./Skeleton.jsx";
 
 const empty = { kind: "receipt", name: "", productId: "", date: "", packs: "", price: "" };
+const KINDS = ["receipt", "purchase", "product", "settings"];
 
-export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit, onSaved, onToast, busy, loading }) {
+export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit, onSaved, onToast, busy, loading, initialKind = "receipt" }) {
   const purchaseFileRef = useRef(null);
   const receiptFileRef = useRef(null);
   const readingRef = useRef(null);
@@ -14,8 +18,11 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
   const patchTimer = useRef(null);
   const dirtyRef = useRef(false);
   const revision = useRef(0);
-  const mounted = useRef(true);
-  const [form, setForm] = useState({ ...empty, date: pantry?.today || todayIso() });
+  const mounted = useMounted();
+  const [form, setForm] = useState({ ...empty, kind: KINDS.includes(initialKind) ? initialKind : empty.kind, date: pantry?.today || todayIso() });
+  // What was just saved, so a run of purchases after one shopping trip is quick.
+  const [lastSaved, setLastSaved] = useState(null);
+  const prefilledPrice = useRef("");
   const [receipt, setReceipt] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [fileError, setFileError] = useState("");
@@ -32,9 +39,6 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
     readingRef.current = reading;
   }, [reading]);
 
-  useEffect(() => () => {
-    mounted.current = false;
-  }, []);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -152,23 +156,45 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
     remember({ ...current, result: { ...current.result, date } }, false);
   }
 
+  function choosePurchaseProduct(productId) {
+    const product = (pantry?.products || []).find((item) => item.productId === productId);
+    const last = product?.latestPricePerPack ? String(product.latestPricePerPack) : "";
+    const untouched = !form.price || form.price === prefilledPrice.current;
+    if (untouched) prefilledPrice.current = last;
+    setForm({ ...form, productId, price: untouched ? last : form.price });
+  }
+
   async function submit(event) {
     event.preventDefault();
+    // A purchase recorded here needs its receipt. (Receipts stay optional on
+    // the server: the assistant and receipt reading create purchases too, and
+    // an old purchase can still get a receipt from Purchases.)
+    if (form.kind === "purchase" && !receipt) {
+      setFileError("Attach the receipt for this purchase.");
+      purchaseFileRef.current?.closest(".field")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     if (heldPurchase && form.kind === "purchase" && samePurchase(form, heldPurchase) && receipt) {
       const ok = await onSubmit({ ...form, kind: "attach", purchaseId: heldPurchase.purchaseId }, receipt);
       if (ok === true) {
         clearPurchaseFile();
         setHeldPurchase(null);
-        setForm({ ...empty, date: pantry?.today || todayIso(), kind: form.kind });
+        setForm({ ...empty, date: form.date || pantry?.today || todayIso(), kind: form.kind });
       }
       return;
     }
     if (heldPurchase && !samePurchase(form, heldPurchase)) setHeldPurchase(null);
     const result = await onSubmit(form, form.kind === "purchase" ? receipt : null);
     if (result === true) {
+      if (form.kind === "purchase") {
+        const product = (pantry?.products || []).find((item) => item.productId === form.productId);
+        setLastSaved({ name: product?.name || "the product", packs: form.packs, price: form.price, date: form.date, hadReceipt: Boolean(receipt) });
+      }
       clearPurchaseFile();
       setHeldPurchase(null);
-      setForm({ ...empty, date: pantry?.today || todayIso(), kind: form.kind });
+      prefilledPrice.current = "";
+      // Keep the date: the next purchase is usually from the same trip.
+      setForm({ ...empty, date: form.kind === "purchase" ? form.date : pantry?.today || todayIso(), kind: form.kind });
       setFileError("");
     } else if (result?.purchaseId) {
       setHeldPurchase({ purchaseId: result.purchaseId, productId: form.productId, date: form.date, packs: form.packs, price: form.price });
@@ -333,7 +359,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
     return (
       <section className="card record-card">
         <h2>Record</h2>
-        <p className="lede">Loading {officeName || "the office"}.</p>
+        <Skeleton label={`Loading ${officeName || "the office"}.`} rows={2} />
       </section>
     );
   }
@@ -360,7 +386,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       ? `Adds a product at ${officeName || "this office"}.`
       : form.kind === "settings"
         ? "Weekend weight and lookback apply to every office."
-        : `${officeName}. A purchase saves with or without a receipt.`;
+        : `${officeName}. Attach the receipt for each purchase.`;
   const visibleLines = (reading?.result?.lines || []).filter((line) => !line.discarded);
   const alert = readError || (reading?.status === "failed" ? reading.error : "");
   const showUpload = !reading || reading.status === "failed";
@@ -399,7 +425,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
               {reading.result.note ? <p className="note">{reading.result.note}</p> : null}
               {reading.result.note ? <p className="note">Editing packs or price does not redo this check.</p> : null}
               <label className="field">Date
-                <input type="date" max={pantry.today} value={reading.result.date || ""} onChange={(event) => changeDate(event.target.value)} />
+                <DateField max={pantry.today} value={reading.result.date || ""} onChange={changeDate} />
               </label>
               <div className="field wide receipt-lines">
                 {visibleLines.length ? visibleLines.map((line) => (
@@ -481,12 +507,21 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
 
       {form.kind === "purchase" || form.kind === "product" ? (
         <form className="record-form" onSubmit={submit}>
+          {form.kind === "purchase" && lastSaved ? (
+            <div className="saved-summary" role="status">
+              <p>
+                <strong>Saved.</strong> {lastSaved.packs} {Number(lastSaved.packs) === 1 ? "pack" : "packs"} of {lastSaved.name} at {rupee(lastSaved.price)} on {indiaDate(lastSaved.date)}
+                {lastSaved.hadReceipt ? ", with its receipt." : "."}
+              </p>
+              <p className="note">Add the next one below. The date stays the same.</p>
+            </div>
+          ) : null}
           <div className="fields">
             {form.kind === "purchase" ? (
               <div className="field wide">
-                <span>Receipt, optional</span>
+                <span>Receipt <span className="required-mark" aria-hidden="true">*</span><span className="sr-only">, required</span></span>
                 <label
-                  className="drop"
+                  className={`drop${fileError && !receipt ? " drop-missing" : ""}`}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => {
                     event.preventDefault();
@@ -499,10 +534,12 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
                     type="file"
                     accept="application/pdf,image/jpeg,image/png"
                     onChange={(event) => takeFile(event.target.files?.[0], "purchase")}
+                    aria-required="true"
+                    aria-invalid={Boolean(fileError && !receipt)}
                   />
                   <IconFile />
                   <span>{receipt ? receipt.fileName : "Drop a PDF, JPEG, or PNG, or browse"}</span>
-                  <small>Up to 10 MB. The purchase still saves if you skip this.</small>
+                  <small>Required. Up to 10 MB.</small>
                 </label>
                 {previewUrl && receipt?.contentType?.startsWith("image/") ? <img className="receipt-preview" src={previewUrl} alt="Receipt preview" /> : null}
                 {previewUrl && receipt?.contentType === "application/pdf" ? <iframe className="receipt-frame" title={receipt.fileName} src={previewUrl} /> : null}
@@ -518,7 +555,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
             ) : null}
             {form.kind === "purchase" ? (
               <label className="field wide">Product
-                <select value={form.productId} onChange={(event) => setForm({ ...form, productId: event.target.value })} required>
+                <select value={form.productId} onChange={(event) => choosePurchaseProduct(event.target.value)} required>
                   <option value="">Choose a product</option>
                   {products.map((product) => (
                     <option key={product.productId} value={product.productId}>{product.name}</option>
@@ -528,7 +565,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
             ) : null}
             {form.kind === "purchase" ? (
               <label className="field">Date
-                <input type="date" max={pantry.today} value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required />
+                <DateField max={pantry.today} value={form.date} onChange={(date) => setForm({ ...form, date })} required />
               </label>
             ) : null}
             {form.kind === "purchase" ? (
@@ -538,8 +575,11 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
             ) : null}
             {form.kind === "purchase" ? (
               <label className="field wide">Price per pack (INR)
-                <input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required />
+                <input inputMode="decimal" value={form.price} onChange={(event) => { prefilledPrice.current = ""; setForm({ ...form, price: event.target.value }); }} required />
               </label>
+            ) : null}
+            {form.kind === "purchase" && prefilledPrice.current && prefilledPrice.current === form.price ? (
+              <p className="note field wide">Filled in from the last price this month. Change it if the receipt differs.</p>
             ) : null}
             <div className="field wide">
               <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : heldPurchase ? "Try the receipt again" : "Save"}</button>
@@ -549,7 +589,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       ) : null}
 
       {form.kind === "settings" ? (
-        <SettingsPanel embedded settings={pantry.settings} onSaved={onSaved} onToast={onToast} />
+        <SettingsPanel embedded settings={pantry.settings} officeId={officeId} officeName={officeName} onSaved={onSaved} onToast={onToast} />
       ) : null}
     </section>
   );

@@ -31,9 +31,10 @@ export function ProductEditor({ product, onSaved, onToast }) {
       <label className="field">Reorder level (packs)
         <input type="number" min="0" max="1000000" step="1" value={reorder} onChange={e => setReorder(e.target.value)} required />
       </label>
-      <label className="field">Warning window (effective days)
+      <label className="field">Warn this many working days ahead
         <input type="number" min="1" max="366" step="1" value={warning} onChange={e => setWarning(e.target.value)} required />
       </label>
+      <p className="note field wide">Due shows when stock falls to the reorder level, or will run out within the warning days. 0 packs means warn on days only.</p>
       {error ? <p className="error field wide" role="alert">{error}</p> : null}
       <div className="field wide"><button className="solid" disabled={busy}>{busy ? "Saving…" : "Save product"}</button></div>
     </form>

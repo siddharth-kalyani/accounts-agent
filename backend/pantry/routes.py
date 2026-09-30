@@ -96,7 +96,7 @@ async def offices(request: Request):
 @router.post("/api/offices", status_code=201)
 async def create_office(request: Request):
     db, actor, body = context(request)
-    return await i.create_office(db, actor, body.get("name"), body.get("managerId"))
+    return await i.create_office(db, actor, body.get("name"), body.get("managerId"), body.get("managerIds"))
 
 
 @router.get("/api/people")
@@ -261,3 +261,9 @@ async def hide_count(request: Request, count_id: str):
 async def settings(request: Request):
     db, actor, body = context(request)
     return await i.update_settings(db, actor, body)
+
+
+@router.post("/api/offices/{office_id}/settings-preview")
+async def settings_preview(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await i.preview_settings(db, actor, office_id, body)

@@ -177,6 +177,10 @@
   ],
   [
     "POST",
+    "/api/offices/{}/settings-preview"
+  ],
+  [
+    "POST",
     "/api/products/{}/hide"
   ],
   [

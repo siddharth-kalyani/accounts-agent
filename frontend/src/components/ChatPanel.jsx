@@ -5,7 +5,18 @@ import { useFocusTrap } from "../focus.js";
 import { IconAssistant, IconBack, IconChats, IconClose, IconPlus, IconSend } from "../icons.jsx";
 
 const READY = "Ask what an office spent, or tell me to add or delete a pantry item. I will ask you to confirm before anything is saved or deleted.";
-const MISSING = "The assistant is not switched on yet. Recording on the pantry screen still works.";
+// Stock and spend questions are answered from live pantry data even without
+// the model, so the greeting says what works instead of leading with "off".
+const MISSING = "I can tell you how much is left, when a product runs out, and what an office spent. Adding or deleting from chat is not switched on yet; use Record for that.";
+
+function suggestions(officeName) {
+  if (!officeName) return [];
+  return [
+    `How much milk is left at ${officeName}?`,
+    `When does coffee run out at ${officeName}?`,
+    `What did ${officeName} spend on tea?`,
+  ];
+}
 
 export function ChatDock({ configured, onSaved, officeId = "", officeName = "", month = "" }) {
   const [open, setOpen] = useState(false);
@@ -102,9 +113,9 @@ export function ChatDock({ configured, onSaved, officeId = "", officeName = "", 
     setBusy(false);
   }
 
-  async function send(event) {
-    event.preventDefault();
-    const message = text.trim();
+  async function send(event, preset) {
+    event?.preventDefault();
+    const message = (preset ?? text).trim();
     if (!message || busy) return;
     const epoch = chatEpoch.current;
     const controller = new AbortController();
@@ -218,6 +229,8 @@ export function ChatDock({ configured, onSaved, officeId = "", officeName = "", 
   }
 
   const lastIndex = messages.length - 1;
+  const fresh = messages.length === 1 && messages[0].content === greeting;
+  const prompts = fresh && !busy ? suggestions(officeName) : [];
 
   return (
     <div className={`dock${open ? " open" : ""}`}>
@@ -270,6 +283,13 @@ export function ChatDock({ configured, onSaved, officeId = "", officeName = "", 
                   ))}
                 </div>
               ))}
+              {prompts.length ? (
+                <div className="chat-prompts" role="group" aria-label="Try asking">
+                  {prompts.map((prompt) => (
+                    <button key={prompt} type="button" className="choice" onClick={() => send(null, prompt)}>{prompt}</button>
+                  ))}
+                </div>
+              ) : null}
               {busy && !messages.some((item) => item.streaming && item.content) ? <p className="muted">Working…</p> : null}
             </div>
           )}

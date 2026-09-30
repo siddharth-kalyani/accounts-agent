@@ -23,11 +23,40 @@ try {
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stock", exact: true })).toBeVisible();
+  // A failed load must never look like it is still loading, even after changing screens.
+  // Switching office (not reloading) keeps this within the server's per-minute budget.
+  const outage = (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary test outage." }) });
+  const pickOffice = async (name) => {
+    await page.locator(".office-pick > button").click();
+    await page.getByRole("option", { name, exact: true }).click();
+  };
+  await page.route("**/api/offices/*/pantry**", outage);
+  await pickOffice("Pune");
+  await expect(page.locator(".load-failed")).toHaveCount(1);
+  for (const label of ["Purchases", "Charts", "Record", "Activity", "Stock"]) {
+    await page.locator(".side").getByRole("button", { name: label, exact: true }).click();
+    await expect(page.locator(".load-failed")).toHaveCount(1);
+    await expect(page.locator(".skeleton")).toHaveCount(0);
+  }
+  // Activity loads in the background once the pantry is back, so fail it first.
+  await page.route("**/api/offices/*/operations**", outage);
+  await page.unroute("**/api/offices/*/pantry**");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".load-failed")).toHaveCount(0);
+  await pickOffice("Ahmedabad");
+  await expect(page.getByText("Edit Coffee", { exact: true })).toBeVisible();
+  await page.locator(".side").getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByText("Activity could not be loaded.")).toBeVisible();
+  await expect(page.locator(".skeleton")).toHaveCount(0);
+  await page.unroute("**/api/offices/*/operations**");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".activity-date").first()).toBeVisible();
+  await page.locator(".side").getByRole("button", { name: "Stock", exact: true }).click();
   await page.getByText("Edit Coffee", { exact: true }).click();
   const editor = page.locator(".product-editor[open]");
   await editor.getByLabel("Product name", { exact: true }).fill("Coffee beans");
   await editor.getByLabel("Reorder level (packs)").fill("2");
-  await editor.getByLabel("Warning window (effective days)").fill("7");
+  await editor.getByLabel("Warn this many working days ahead").fill("7");
   await editor.getByRole("button", { name: "Save product" }).click();
   await expect(page.getByRole("heading", { name: "Coffee beans", exact: true })).toBeVisible();
   assert.equal(await page.getByRole("button", { name: /hide|restore/i }).count(), 0);
@@ -37,21 +66,43 @@ try {
   await page.locator(".record-form select").selectOption({ label: "Coffee beans" });
   await page.getByLabel("Packs", { exact: true }).fill("3");
   await page.getByLabel("Price per pack (INR)").fill("25.50");
+  // The Purchase tab needs a receipt; nothing is sent without one.
+  let purchasePosts = 0;
+  const countPurchase = (request) => { if (request.method() === "POST" && /\/api\/offices\/[^/]+\/purchases$/.test(request.url())) purchasePosts++; };
+  page.on("request", countPurchase);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Attach the receipt for this purchase.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Packs", { exact: true })).toHaveValue("3");
+  assert.equal(purchasePosts, 0);
+  page.off("request", countPurchase);
   await page.locator('input[type="file"]').setInputFiles({ name: "browser-receipt.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nBrowser test receipt\n%%EOF") });
   await expect(page.getByText("browser-receipt.pdf", { exact: true })).toBeVisible();
   // A failed read after an acknowledged save must not look like a failed
   // purchase and leave the same form ready to be submitted again.
   await page.route("**/api/offices", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary test outage." }) }));
+  const purchaseDate = await page.locator(".record-form input[type=date]").inputValue();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByLabel("Packs", { exact: true })).toHaveValue("");
   await expect(page.getByText("Saved, but the screen could not refresh. Reload to see the updated pantry.", { exact: true })).toBeVisible();
+  // A run of purchases keeps the date and says what was just saved.
+  await expect(page.locator(".saved-summary")).toContainText("3 packs of Coffee beans");
+  await expect(page.locator(".record-form input[type=date]")).toHaveValue(purchaseDate);
   await page.unroute("**/api/offices");
-  await page.getByRole("button", { name: "Stock", exact: true }).click();
-  await page.getByText("Purchases and receipts", { exact: true }).click();
+  await page.getByRole("button", { name: "Purchases", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Purchases and receipts" })).toBeVisible();
   const row = page.locator(".purchase-row").filter({ has: page.getByRole("button", { name: "Download receipt" }) }).first();
   const downloaded = page.waitForEvent("download");
   await row.getByRole("button", { name: "Download receipt" }).click();
   assert.equal((await downloaded).suggestedFilename(), "browser-receipt.pdf");
+  // Remove shows Undo; nothing is sent until the toast closes.
+  const deletes = [];
+  page.on("request", (request) => { if (request.method() === "POST" && /\/api\/purchases\/[^/]+\/delete$/.test(request.url())) deletes.push(request.url()); });
+  const rowsBefore = await page.locator(".purchase-row").count();
+  await row.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.locator(".purchase-row")).toHaveCount(rowsBefore - 1);
+  await page.locator(".toast").getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator(".purchase-row")).toHaveCount(rowsBefore);
+  assert.equal(deletes.length, 0, "Undo must cancel the removal before it reaches the server.");
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await page.getByRole("button", { name: "Receipt", exact: true }).click();
   await page.locator('input[type="file"]').setInputFiles({
@@ -189,6 +240,15 @@ try {
   await expect(mobile.locator(".product-editor[open]").getByLabel("Product name", { exact: true })).toBeVisible();
   await mobile.screenshot({ path: path.join(os.tmpdir(), "pantry-mobile-review.png"), fullPage: true });
   assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // The phone menu closes with Escape and with its own close button, and keeps focus inside while open.
+  await mobile.getByRole("button", { name: "Open menu" }).click();
+  await expect(mobile.locator(".side.open")).toHaveCount(1);
+  await mobile.keyboard.press("Escape");
+  await expect(mobile.locator(".side.open")).toHaveCount(0);
+  await mobile.getByRole("button", { name: "Open menu" }).click();
+  await expect(mobile.locator(".side").getByRole("button", { name: "Close menu" })).toBeFocused();
+  await mobile.locator(".side").getByRole("button", { name: "Close menu" }).click();
+  await expect(mobile.locator(".side.open")).toHaveCount(0);
   await mobile.getByRole("button", { name: "Open menu" }).click();
   await mobile.getByRole("button", { name: "Record", exact: true }).click();
   await mobile.getByRole("button", { name: "Receipt", exact: true }).click();

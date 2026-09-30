@@ -55,7 +55,7 @@ export function refreshSession() {
   return refreshing;
 }
 
-export async function api(path, { method = "GET", body, retried = false, headers: extra = {} } = {}) {
+export async function api(path, { method = "GET", body, retried = false, headers: extra = {}, keepalive = false } = {}) {
   const headers = authHeaders(method, extra);
   const passwordCall = path.startsWith("/api/auth/password");
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -64,6 +64,8 @@ export async function api(path, { method = "GET", body, retried = false, headers
     headers,
     credentials: "same-origin",
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    // Lets a pending Undo action finish when the tab closes.
+    keepalive,
   });
   const type = response.headers.get("content-type") || "";
   if (response.ok && (type.includes("text/csv") || response.headers.get("content-disposition")?.startsWith("attachment"))) {
@@ -73,7 +75,7 @@ export async function api(path, { method = "GET", body, retried = false, headers
   if ((response.status === 401 || (response.status === 403 && data.code === "csrf")) && !retried && canRefresh(path)) {
     try {
       await refreshSession();
-      return api(path, { method, body, retried: true, headers: extra });
+      return api(path, { method, body, retried: true, headers: extra, keepalive });
     } catch (error) {
       if (error.status === 401) { setCsrf(""); onUnauthorized(); }
       throw error;
@@ -201,7 +203,67 @@ export function packs(value) {
 }
 
 export function statusLabel(status) {
+  if (status === "out") return "Out of stock";
   if (status === "due") return "Due";
   if (status === "not_enough_history") return "Not enough history";
   return "On track";
+}
+
+// Display-only reading of the server's figures. The server still decides
+// on-hand, burn and status; a product at or below zero on hand is shown as
+// out of stock, which is more urgent than due.
+export function stockState(product) {
+  if (product.status !== "not_enough_history" && Number(product.onHand) <= 0) return "out";
+  return product.status;
+}
+
+// Calendar days from today to an ISO date (both Asia/Kolkata dates).
+export function daysUntil(today, iso) {
+  if (!today || !iso) return null;
+  const [ty, tm, td] = today.split("-").map(Number);
+  const [y, m, d] = iso.split("-").map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+}
+
+export function runsOutWhen(product, today) {
+  if (stockState(product) === "out") return "Out now";
+  const days = daysUntil(today, product.expectedDate);
+  if (days == null) return "";
+  if (days <= 0) return "Now";
+  if (days === 1) return "Tomorrow";
+  return `In ${days} days`;
+}
+
+// The last recorded day stock was above zero, from the server's own series.
+export function ranOutOn(product) {
+  const points = (product.series || []).filter((point) => !point.projected);
+  let since = null;
+  for (const point of points) {
+    if (Number(point.onHand) > 0) since = null;
+    else if (!since) since = point.date;
+  }
+  return since;
+}
+
+// Packs a calendar week at the server's burn rate: five weekdays plus two
+// weekend days at the company weekend weight.
+export function weeklyUse(product, settings) {
+  const burn = Number(product.burnRatePerEffectiveDay);
+  if (!burn) return "";
+  const weight = Number(settings?.weekendWeight ?? 0.2);
+  const week = burn * (5 + 2 * weight);
+  const round = (value) => (value >= 10 ? Math.round(value) : Math.round(value * 10) / 10);
+  const unit = (value) => (value === 1 ? "pack" : "packs");
+  if (week >= 1) return `About ${round(week)} ${unit(round(week))} a week`;
+  const month = round((week * 365) / 84);
+  if (month < 0.1) return "Very little";
+  return `About ${month} ${unit(month)} a month`;
+}
+
+export function indiaDay(at) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at));
+}
+
+export function indiaTime(at) {
+  return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" }).format(new Date(at));
 }
