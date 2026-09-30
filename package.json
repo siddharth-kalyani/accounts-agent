@@ -2,21 +2,18 @@
   "name": "intuitive-pantry",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "start": "node server/index.js",
-    "build": "vite build",
-    "test": "node --test server/calc.test.js server/identity.test.js server/password.test.js server/service.test.js server/chat.scope.test.js"
-  },
-  "dependencies": {
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "openid-client": "^6.8.8"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^5.0.2",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "vite": "^7.1.3"
+    "start": "node scripts/backend.mjs",
+    "build": "npm run build --workspace frontend",
+    "test": "node scripts/backend.mjs --test",
+    "test:browser": "npm run test:browser --workspace frontend",
+    "migrate:postgres": "node scripts/backend.mjs --migrate"
   }
 }
