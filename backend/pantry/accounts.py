@@ -270,8 +270,10 @@ async def accept_microsoft_login(db, identity):
     return await present_person(db, await person_by_id(db, person["id"]))
 
 
-async def super_admin_count(db):
-    return (await db.get("SELECT COUNT(DISTINCT g.person_id) AS n FROM role_grant g JOIN person p ON p.id = g.person_id WHERE g.role = 'super_admin' AND g.deleted_at IS NULL AND p.active = 1"))["n"]
+async def super_admin_remains(db, *, without_grant="", without_person=""):
+    """True when an active Super Admin is left after removing one grant or turning one person off."""
+    row = await db.get("SELECT COUNT(DISTINCT g.person_id) AS n FROM role_grant g JOIN person p ON p.id = g.person_id WHERE g.role = 'super_admin' AND g.deleted_at IS NULL AND p.active = 1 AND g.id != ? AND p.id != ?", without_grant, without_person)
+    return row["n"] > 0
 
 
 async def present_access(db, person):
@@ -343,7 +345,7 @@ async def remove_grant(db, actor, person_id, grant_id):
     row = await db.get("SELECT * FROM role_grant WHERE id = ? AND person_id = ? AND deleted_at IS NULL", grant_id, person_id)
     if not row:
         raise HttpError(404, "That access grant was not found.")
-    if row["role"] == "super_admin" and await super_admin_count(db) <= 1:
+    if row["role"] == "super_admin" and not await super_admin_remains(db, without_grant=grant_id):
         raise HttpError(422, "The last Super Admin has to stay on.")
     await db.run("UPDATE role_grant SET deleted_by = ?, deleted_at = ? WHERE id = ?", actor["id"], stamp(), grant_id)
     await log(db, actor["id"], "grant.remove", "grant", grant_id, row["office_id"], "Removed an access grant. The row stays.")
@@ -361,9 +363,8 @@ async def set_person_active(db, actor, person_id, active):
     if type(active) is not bool:
         raise HttpError(422, "Active must be true or false.")
     if not active:
-        admins = await super_admin_count(db)
         is_super = await db.get("SELECT id FROM role_grant WHERE person_id = ? AND role = 'super_admin' AND deleted_at IS NULL", person_id)
-        if is_super and admins <= 1:
+        if is_super and not await super_admin_remains(db, without_person=person_id):
             raise HttpError(422, "The last Super Admin has to stay on.")
     await db.run("UPDATE person SET active = ? WHERE id = ?", 1 if active else 0, person_id)
     if not active:

@@ -144,6 +144,25 @@ async def test_last_active_admin_and_live_roles(db, people, offices):
         await i.create_product(db, manager, offices["Ahmedabad"], "Unauthorized")
 
 
+async def test_super_admin_rule_counts_only_active_people(db, people):
+    admin = people["admin"]
+    idle = await a.save_access(db, admin, {"signInName": "idle.super@intuitive.AI", "displayName": "Idle Super", "role": "super_admin"})
+    await a.set_person_active(db, admin, idle["id"], False)
+    # An inactive Super Admin never kept anyone in; removing their role or turning them off again is fine.
+    await a.set_person_active(db, admin, idle["id"], False)
+    await a.remove_grant(db, admin, idle["id"], idle["grants"][0]["id"])
+    with fails(422, "The last Super Admin has to stay on."):
+        await a.remove_grant(db, admin, admin["id"], admin["grants"][0]["id"])
+    second = await a.save_access(db, admin, {"signInName": "second.super@intuitive.AI", "displayName": "Second Super", "role": "super_admin"})
+    await a.remove_grant(db, admin, admin["id"], admin["grants"][0]["id"])
+    actor = (await a.sign_in(db, second["email"]))["person"]
+    with fails(422, "The last Super Admin has to stay on."):
+        await a.set_person_active(db, actor, second["id"], False)
+    with fails(422, "The last Super Admin has to stay on."):
+        await a.remove_grant(db, actor, second["id"], second["grants"][0]["id"])
+    assert any(p["id"] == second["id"] and p["active"] for p in await a.list_access(db, actor))
+
+
 async def test_production_seed_is_once_only(tmp_path):
     file = tmp_path / "production.sqlite"
     db = await c.open_database(file, seed="production")

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, indiaDate, rupee } from "../api.js";
 import { useFocusTrap } from "../focus.js";
+import { IconClose } from "../icons.jsx";
 
 export function Purchases({ officeId, month, revision, canWrite, onChanged, onToast }) {
   const [open, setOpen] = useState(false);
@@ -214,7 +215,7 @@ export function Purchases({ officeId, month, revision, canWrite, onChanged, onTo
               <h2>{preview.name}</h2>
               <div className="row-actions">
                 <button className="ghost" type="button" onClick={downloadPreview}>Download receipt</button>
-                <button className="ghost" type="button" onClick={closePreview}>Close</button>
+                <button className="icon-button" type="button" aria-label="Close" title="Close" onClick={closePreview}><IconClose /></button>
               </div>
             </div>
             {preview.type.startsWith("image/") ? <img className="receipt-preview" src={preview.url} alt={preview.name} /> : <iframe className="receipt-frame" title={preview.name} src={preview.url} />}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { IconClose, IconSearch } from "../icons.jsx";
 
 const ROLES = [
   ["office_manager", "Office Manager"],
@@ -28,6 +29,7 @@ export function AccessPanel({ offices, onToast }) {
   const [inviteName, setInviteName] = useState("");
   const [issued, setIssued] = useState(null);
   const [pending, setPending] = useState(null);
+  const [peopleQuery, setPeopleQuery] = useState("");
 
   async function load() {
     const data = await api("/api/access");
@@ -146,12 +148,24 @@ export function AccessPanel({ offices, onToast }) {
   }
 
   const needsOffice = form.role === "office_manager" || form.role === "accounts";
+  // The server refuses to remove or turn off the last active Super Admin, so
+  // those controls are not offered for that person.
+  const activeSuperAdmins = people.filter((person) => person.active && person.grants.some((grant) => grant.role === "super_admin"));
+  const lastSuperAdminId = activeSuperAdmins.length === 1 ? activeSuperAdmins[0].id : null;
+  const peopleNeedle = peopleQuery.trim().toLowerCase();
+  const shownPeople = people.filter((person) => !peopleNeedle || [
+    person.displayName,
+    person.email,
+    person.active ? "" : "turned off",
+    person.invitePending ? "invite pending" : "",
+    ...person.grants.map((grant) => grant.label),
+  ].join(" ").toLowerCase().includes(peopleNeedle));
 
   return (
     <section className="card access">
       <div className="card-head">
         <h2>Access</h2>
-        <a className="ghost" href="/api/auth/directory">Connect directory search</a>
+        <button className="ghost" type="button" onClick={() => onToast?.("Directory search is under development.")}>Connect directory search</button>
       </div>
       <p className="lede">Invite an @intuitive.AI email first. Send the one-time password yourself. Then choose what that person can do. Admin can see every office and cannot change records or access.</p>
       {error ? <p className="error">{error}</p> : null}
@@ -186,7 +200,15 @@ export function AccessPanel({ offices, onToast }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <button className="solid" type="submit" disabled={busy || query.trim().length < 2}>Search</button>
+        <button
+          className="solid icon-submit"
+          type="submit"
+          aria-label="Search the directory"
+          title="Search the directory"
+          disabled={busy || query.trim().length < 2}
+        >
+          <IconSearch />
+        </button>
       </form>
       {results ? (
         <div className="person-list">
@@ -235,33 +257,59 @@ export function AccessPanel({ offices, onToast }) {
         <button className="solid" type="submit" disabled={busy}>Save access</button>
       </form>
 
+      <div className="access-people">
+        <div className="card-head">
+          <h3 className="panel-title">People <span className="count">{people.length}</span></h3>
+          <span className="search-field people-search">
+            <IconSearch />
+            <input
+              type="search"
+              aria-label="Search people on the access list"
+              placeholder="Search by name, email, or role"
+              value={peopleQuery}
+              onChange={(event) => setPeopleQuery(event.target.value)}
+            />
+            {peopleQuery ? (
+              <button className="search-clear" type="button" aria-label="Clear search" onClick={() => setPeopleQuery("")}>
+                <IconClose />
+              </button>
+            ) : null}
+          </span>
+        </div>
+        {people.length > 0 && !shownPeople.length ? <p className="note">No person matches that search.</p> : null}
+      </div>
       <ul className="access-list">
-        {people.map((person) => (
+        {shownPeople.map((person) => (
           <li key={person.id}>
             <div>
               <strong>{person.displayName}</strong>
               <span>{person.email}</span>
               <span>{person.active ? person.grants.map((grant) => grant.label).join(", ") || "No role yet" : "Turned off"}</span>
               {person.invitePending ? <span>Invite password not used yet</span> : null}
+              {person.id === lastSuperAdminId ? <span>The only Super Admin. Add another before removing this role.</span> : null}
             </div>
             <div className="access-actions">
-              {person.grants.map((grant) => (
+              {person.grants
+                .filter((grant) => !(grant.role === "super_admin" && person.id === lastSuperAdminId))
+                .map((grant) => (
+                  <button
+                    key={grant.id}
+                    className="ghost small"
+                    type="button"
+                    onClick={() => setPending({ kind: "grant", personId: person.id, grantId: grant.id, label: grant.label })}
+                  >
+                    Remove {grant.label}
+                  </button>
+                ))}
+              {person.id === lastSuperAdminId ? null : (
                 <button
-                  key={grant.id}
-                  className="texty"
+                  className="ghost small"
                   type="button"
-                  onClick={() => setPending({ kind: "grant", personId: person.id, grantId: grant.id, label: grant.label })}
+                  onClick={() => setPending({ kind: "active", personId: person.id, active: !person.active, label: person.displayName })}
                 >
-                  Remove {grant.label}
+                  {person.active ? "Turn off" : "Turn on"}
                 </button>
-              ))}
-              <button
-                className="texty"
-                type="button"
-                onClick={() => setPending({ kind: "active", personId: person.id, active: !person.active, label: person.displayName })}
-              >
-                {person.active ? "Turn off" : "Turn on"}
-              </button>
+              )}
             </div>
             {pending?.personId === person.id ? (
               <div className="confirm-card">

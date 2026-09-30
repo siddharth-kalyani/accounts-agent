@@ -9,7 +9,8 @@ export async function startTestApp() {
   let buffer = '';
   const exited = once(child, 'exit');
   const metadata = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { child.kill(); reject(new Error('Test API did not start.')); }, 20000);
+    // Seeding hashes several scrypt passwords; slower Windows machines need more than 20 seconds.
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Test API did not start.')); }, 60000);
     child.stdout.on('data', bytes => {
       buffer += String(bytes);
       const line = buffer.split('\n').find(line => line.startsWith('PANTRY_TEST_APP '));

@@ -17,6 +17,10 @@ try {
   await page.goto(app.base);
   await page.getByLabel("Email", { exact: true }).fill(app.admin.email);
   await page.getByLabel("Password", { exact: true }).fill(app.password);
+  await page.getByRole("button", { name: "Show password", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "Hide password", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stock", exact: true })).toBeVisible();
   await page.getByText("Edit Coffee", { exact: true }).click();
@@ -28,6 +32,7 @@ try {
   await expect(page.getByRole("heading", { name: "Coffee beans", exact: true })).toBeVisible();
   assert.equal(await page.getByRole("button", { name: /hide|restore/i }).count(), 0);
   await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Receipt", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Purchase", exact: true }).click();
   await page.locator(".record-form select").selectOption({ label: "Coffee beans" });
   await page.getByLabel("Packs", { exact: true }).fill("3");

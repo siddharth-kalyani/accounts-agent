@@ -71,6 +71,23 @@ export async function extendedWorkflows({ page, browser, app }) {
   await expect(page.getByRole('heading', { name: 'Browser oats', exact: true })).toHaveCount(0);
 
   await nav('Access');
+  await nav('Connect directory search');
+  const toast = page.locator('.toast').filter({ hasText: 'Directory search is under development.' });
+  await expect(toast).toBeVisible();
+  await toast.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(toast).toHaveCount(0);
+  // The only active Super Admin cannot be removed or turned off, so the screen does not offer it.
+  const lastSuper = page.locator('.access-list li').filter({ hasText: app.admin.email });
+  await expect(lastSuper).toContainText('The only Super Admin.');
+  assert.equal(await lastSuper.getByRole('button', { name: /Remove Super Admin/ }).count(), 0);
+  assert.equal(await lastSuper.getByRole('button', { name: 'Turn off', exact: true }).count(), 0);
+  const peopleSearch = page.getByLabel('Search people on the access list');
+  await peopleSearch.fill(app.manager.email);
+  await expect(page.locator('.access-list li')).toHaveCount(1);
+  await peopleSearch.fill('nobody-matches-this');
+  await expect(page.getByText('No person matches that search.')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+  await expect(page.locator('.access-list li').filter({ hasText: app.manager.email })).toHaveCount(1);
   const email = 'browser.invitee@intuitive.AI';
   await page.getByLabel('Email to invite').fill(email);
   await page.locator('.access-form').first().getByLabel('Name', { exact: true }).fill('Browser Invitee');

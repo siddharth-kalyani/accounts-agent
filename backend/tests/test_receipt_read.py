@@ -75,7 +75,7 @@ def test_page_images_are_jpeg_in_memory():
     images, note = receipt_read.page_images(pdf, "application/pdf")
     assert note == "Only the first 4 pages were read." and len(images) == 4
     assert all(image.startswith(b"\xff\xd8\xff") for image in images)
-    source = Path(receipt_read.__file__).read_text()
+    source = Path(receipt_read.__file__).read_text(encoding="utf-8")
     assert "sys.platform" not in source and "os.name" not in source and "tempfile" not in source
 
 

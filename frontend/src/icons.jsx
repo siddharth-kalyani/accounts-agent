@@ -106,6 +106,35 @@ export function IconClose() {
   );
 }
 
+export function IconEye() {
+  return (
+    <Svg size={18}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Svg>
+  );
+}
+
+export function IconEyeOff() {
+  return (
+    <Svg size={18}>
+      <path d="M10.6 5.6A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16.4 16.4 0 0 1-2.6 3.4" />
+      <path d="M6.6 6.6C4 8.3 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 0 0 5.4-1.8" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="m3 3 18 18" />
+    </Svg>
+  );
+}
+
+export function IconSearch() {
+  return (
+    <Svg size={18}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.4-4.4" />
+    </Svg>
+  );
+}
+
 export function IconPlus() {
   return (
     <Svg size={18}>

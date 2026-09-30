@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { IconSearch } from "../icons.jsx";
+import { PickMenu } from "./PickMenu.jsx";
 
 export function OfficesPanel({ offices, onChanged, onToast }) {
   const [people, setPeople] = useState([]);
@@ -111,32 +113,39 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
       </div>
       <p className="lede">Add an office, rename it, or choose who records for it. A new office starts with Coffee, Milk, Sugar, Tea, and Sticks.</p>
       {error ? <p className="error" role="alert">{error}</p> : null}
-      <form className="office-form access-form" onSubmit={addOffice}>
-        <label>Office name
-          <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} required />
+      <form className="office-form panel" onSubmit={addOffice}>
+        <h3 className="panel-title">Add an office</h3>
+        <label className="field">Office name
+          <input value={name} maxLength={80} placeholder="For example, Pune" onChange={(event) => setName(event.target.value)} required />
         </label>
-        <label>Office Manager
-          <input
-            value={personQuery}
-            placeholder="Search people"
-            aria-label="Search people"
-            onChange={(event) => setPersonQuery(event.target.value)}
-          />
-        </label>
-        <div className="person-list">
-          {people.length === 0 && !error ? <p>Loading people.</p> : null}
-          {choices.map((person) => (
-            <button
-              key={person.id}
-              type="button"
-              aria-pressed={person.id === personId}
-              onClick={() => setPersonId(person.id)}
-            >
-              <span>{person.displayName}</span>
-              <small>{person.email}</small>
-            </button>
-          ))}
-          {people.length > 0 && !choices.length ? <p>No person matches that search.</p> : null}
+        <div className="field">
+          <span>Office Manager</span>
+          <div className="pick-list">
+            <span className="search-field">
+              <IconSearch />
+              <input
+                value={personQuery}
+                placeholder="Search people"
+                aria-label="Search people"
+                onChange={(event) => setPersonQuery(event.target.value)}
+              />
+            </span>
+            <div className="person-list">
+              {people.length === 0 && !error ? <p>Loading people.</p> : null}
+              {choices.map((person) => (
+                <button
+                  key={person.id}
+                  type="button"
+                  aria-pressed={person.id === personId}
+                  onClick={() => setPersonId(person.id)}
+                >
+                  <span>{person.displayName}</span>
+                  <small>{person.email}</small>
+                </button>
+              ))}
+              {people.length > 0 && !choices.length ? <p>No person matches that search.</p> : null}
+            </div>
+          </div>
         </div>
         <button className="solid" type="submit" disabled={busy || !name.trim() || !personId}>{busy ? "Saving…" : "Add office"}</button>
       </form>
@@ -145,25 +154,44 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
         {offices.map((office) => {
           const current = managers(office.id);
           const taken = new Set(current.map((manager) => manager.personId));
+          const draft = names[office.id] ?? office.name;
+          const available = people
+            .filter((person) => !taken.has(person.id))
+            .map((person) => ({ value: person.id, label: person.displayName, detail: person.email }));
           return (
-            <article className="office-row" key={office.id}>
-              <label>Name
-                <input
-                  value={names[office.id] ?? office.name}
-                  maxLength={80}
-                  aria-label={`Name for ${office.name}`}
-                  onChange={(event) => setNames((currentNames) => ({ ...currentNames, [office.id]: event.target.value }))}
-                />
-              </label>
-              <button className="ghost" type="button" disabled={busy || (names[office.id] ?? office.name).trim() === office.name} onClick={() => rename(office)}>Rename</button>
-              <div>
-                <p className="lede-small">Office Managers</p>
-                {current.length ? current.map((manager) => (
-                  <div className="manager-line" key={manager.id}>
-                    <span>{manager.displayName}</span>
-                    <button className="texty" type="button" onClick={() => setPending(manager)}>Remove</button>
-                  </div>
-                )) : <p className="note">No Office Manager yet.</p>}
+            <article className="office-row panel" key={office.id}>
+              <form
+                className="inline-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  rename(office);
+                }}
+              >
+                <label className="field">Name
+                  <input
+                    value={draft}
+                    maxLength={80}
+                    aria-label={`Name for ${office.name}`}
+                    onChange={(event) => setNames((currentNames) => ({ ...currentNames, [office.id]: event.target.value }))}
+                  />
+                </label>
+                <button className="ghost" type="submit" disabled={busy || !draft.trim() || draft.trim() === office.name}>Rename</button>
+              </form>
+              <div className="office-managers">
+                <p className="panel-label">Office Managers</p>
+                {current.length ? (
+                  <ul className="manager-list">
+                    {current.map((manager) => (
+                      <li className="manager-line" key={manager.id}>
+                        <span>
+                          <strong>{manager.displayName}</strong>
+                          <small>{manager.email}</small>
+                        </span>
+                        <button className="ghost small" type="button" onClick={() => setPending(manager)}>Remove</button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="note">No Office Manager yet.</p>}
                 {pending && current.some((manager) => manager.id === pending.id) ? (
                   <div className="confirm-card">
                     <p>Remove {pending.displayName} as Office Manager at {office.name}?</p>
@@ -173,19 +201,22 @@ export function OfficesPanel({ offices, onChanged, onToast }) {
                     </div>
                   </div>
                 ) : null}
-                <label>Add an Office Manager
-                  <select
-                    value={assign[office.id] || ""}
-                    aria-label={`Add an Office Manager at ${office.name}`}
-                    onChange={(event) => setAssign((currentAssign) => ({ ...currentAssign, [office.id]: event.target.value }))}
-                  >
-                    <option value="">Choose a person</option>
-                    {people.filter((person) => !taken.has(person.id)).map((person) => (
-                      <option key={person.id} value={person.id}>{person.displayName}</option>
-                    ))}
-                  </select>
-                </label>
-                <button className="ghost" type="button" disabled={busy || !assign[office.id]} onClick={() => assignManager(office.id)}>Assign</button>
+                <div className="inline-form">
+                  <div className="field">
+                    <span>Add an Office Manager</span>
+                    <PickMenu
+                      options={available}
+                      value={assign[office.id] || ""}
+                      onChange={(chosen) => setAssign((currentAssign) => ({ ...currentAssign, [office.id]: chosen }))}
+                      label={`Add an Office Manager at ${office.name}`}
+                      placeholder={available.length ? "Choose a person" : "Everyone is already here"}
+                      searchLabel="Search people"
+                      emptyText="No person matches that search."
+                      disabled={!available.length}
+                    />
+                  </div>
+                  <button className="ghost" type="button" disabled={busy || !assign[office.id]} onClick={() => assignManager(office.id)}>Assign</button>
+                </div>
               </div>
             </article>
           );

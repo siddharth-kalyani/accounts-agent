@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pantry import calc, core, accounts, inventory, conversations, passwords, secret, chat
 
-CORPUS = json.loads((Path(__file__).parent / "fixtures/node-contracts.json").read_text())
+CORPUS = json.loads((Path(__file__).parent / "fixtures/node-contracts.json").read_text(encoding="utf-8"))
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
@@ -101,7 +101,7 @@ def test_node_credentials_remain_usable(monkeypatch):
 
 
 async def test_existing_node_sessions_survive_database_reopen_and_rotate(tmp_path, monkeypatch):
-    data = json.loads((Path(__file__).parent / 'fixtures/node-session.json').read_text())
+    data = json.loads((Path(__file__).parent / 'fixtures/node-session.json').read_text(encoding='utf-8'))
     monkeypatch.setattr(passwords.time, 'time', lambda: data['issuedAt'] + 1)
     file = tmp_path / 'existing.sqlite'
     db = await core.open_database(file, seed='none')

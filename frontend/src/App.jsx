@@ -3,6 +3,9 @@ import { api, setCsrf, setUnauthorizedHandler } from "./api.js";
 import { Dashboard } from "./screens/Dashboard.jsx";
 import { SetPassword, SignIn } from "./screens/SignIn.jsx";
 
+const THEME_KEY = "aim-theme";
+const THEME_CHOICES = ["light", "dark", "system"];
+
 function resolve(choice) {
   if (choice === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -10,11 +13,29 @@ function resolve(choice) {
   return choice === "dark" ? "dark" : "light";
 }
 
+function validChoice(value) {
+  return THEME_CHOICES.includes(value) ? value : "light";
+}
+
+// Storage can be blocked (private windows, site-data policies). The theme then
+// still applies for this visit; it just is not remembered.
+function storedChoice() {
+  try {
+    return validChoice(localStorage.getItem(THEME_KEY));
+  } catch {
+    return "light";
+  }
+}
+
 export function applyTheme(choice) {
   const mode = resolve(choice);
   document.documentElement.dataset.theme = mode;
   document.documentElement.dataset.themeChoice = choice;
-  localStorage.setItem("aim-theme", choice);
+  try {
+    localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    /* not remembered, still applied */
+  }
   return mode;
 }
 
@@ -23,8 +44,8 @@ export function App() {
   const [setupEmail, setSetupEmail] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [ready, setReady] = useState(false);
-  const [choice, setChoice] = useState(localStorage.getItem("aim-theme") || "light");
-  const [mode, setMode] = useState(resolve(localStorage.getItem("aim-theme") || "light"));
+  const [choice, setChoice] = useState(storedChoice);
+  const [mode, setMode] = useState(() => resolve(storedChoice()));
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -68,6 +89,15 @@ export function App() {
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, [choice]);
+
+  // A choice made in another tab follows here too.
+  useEffect(() => {
+    function onStorage(event) {
+      if (event.key === THEME_KEY) setChoice(validChoice(event.newValue));
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const theme = { choice, setChoice, mode };
   if (!ready) {

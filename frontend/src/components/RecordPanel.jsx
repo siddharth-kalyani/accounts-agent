@@ -4,7 +4,7 @@ import { IconFile } from "../icons.jsx";
 import { ProductMenu } from "./ProductMenu.jsx";
 import { SettingsPanel } from "./SettingsPanel.jsx";
 
-const empty = { kind: "purchase", name: "", productId: "", date: "", packs: "", price: "" };
+const empty = { kind: "receipt", name: "", productId: "", date: "", packs: "", price: "" };
 
 export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit, onSaved, onToast, busy, loading }) {
   const purchaseFileRef = useRef(null);

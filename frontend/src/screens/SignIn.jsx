@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, setCsrf } from "../api.js";
 import { ThemeSwitch } from "../App.jsx";
-import { IconMicrosoft } from "../icons.jsx";
+import { IconEye, IconEyeOff, IconMicrosoft } from "../icons.jsx";
 
 const AUTH_MESSAGES = {
   not_configured: "Microsoft sign-in is not configured on this server yet. You can still sign in with an invited email.",
@@ -32,6 +32,28 @@ function Shell({ theme, children }) {
         {children}
       </section>
     </main>
+  );
+}
+
+function SecretField({ id, label, shown, onToggle, ...input }) {
+  return (
+    <div className="secret-row">
+      <label htmlFor={id}>{label}</label>
+      <span className="secret-field">
+        <input id={id} type={shown ? "text" : "password"} {...input} />
+        <button
+          type="button"
+          className="secret-toggle"
+          aria-label={shown ? "Hide password" : "Show password"}
+          aria-pressed={shown}
+          aria-controls={id}
+          title={shown ? "Hide password" : "Show password"}
+          onClick={onToggle}
+        >
+          {shown ? <IconEyeOff /> : <IconEye />}
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -87,22 +109,16 @@ export function SignIn({ theme, onSuccess, onSetup, notice = "" }) {
             required
           />
         </label>
-        <div className="secret-row">
-          <label htmlFor="sign-password">Password</label>
-          <span className="secret-field">
-            <input
-              id="sign-password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-            <button type="button" className="texty" aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}>
-              {showPassword ? "Hide" : "Show"}
-            </button>
-          </span>
-        </div>
+        <SecretField
+          id="sign-password"
+          label="Password"
+          shown={showPassword}
+          onToggle={() => setShowPassword((value) => !value)}
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
         <button className="solid" type="submit" disabled={busy} aria-busy={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
       <p className="or">or</p>
@@ -168,26 +184,20 @@ export function SetPassword({ theme, email, onSuccess }) {
         <label>Email
           <input type="email" value={email} readOnly autoComplete="username" />
         </label>
-        <div className="secret-row">
-          <label htmlFor="new-password">New password</label>
-          <span className="secret-field">
-            <input
-              id="new-password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="new-password"
-              value={password}
-              aria-invalid={Boolean(message)}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setInviteRejected(false);
-              }}
-              required
-            />
-            <button type="button" className="texty" aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}>
-              {showPassword ? "Hide" : "Show"}
-            </button>
-          </span>
-        </div>
+        <SecretField
+          id="new-password"
+          label="New password"
+          shown={showPassword}
+          onToggle={() => setShowPassword((value) => !value)}
+          autoComplete="new-password"
+          value={password}
+          aria-invalid={Boolean(message)}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setInviteRejected(false);
+          }}
+          required
+        />
         <label>Confirm password
           <input
             type={showPassword ? "text" : "password"}

@@ -76,7 +76,8 @@ Shape and chrome:
 
 - Corner radius is 4px. Shadows stay soft and neutral.
 - Primary button is `.solid`: ink fill, paper text. Dark theme flips that pair to `#f5f5f3` on `#111`.
-- Secondary actions use `.ghost` or `.texty`.
+- Secondary actions use `.ghost` or `.texty`; compact row actions use `.ghost.small`. Close, show/hide password, and clear-search controls are icon buttons with an `aria-label`, not words.
+- Text boxes and selects share one styled look (see "Form controls" in `styles.css`); do not leave a browser-default control. Searchable pickers use `PickMenu.jsx`.
 - Focus uses `outline: 2px solid var(--accent)`.
 - The app shell is `100dvh`. Only `.page` scrolls. Do not put a second page scrollbar on `body`.
 - Content width sits near `min(1180px, 100%)`.
@@ -104,6 +105,8 @@ Invite flow, Super Admin only, Access screen:
 - Enter an `@intuitive.AI` email. The API returns a one-time password once. The Super Admin sends it by hand.
 - That password is stored only as a scrypt hash. The person signs in with it and lands on the set-password page with the email filled in. They confirm a new password.
 - Someone who already chose a password is not issued another invite over the top.
+- At least one active Super Admin always remains. The server refuses to remove that role from, or turn off, the last active Super Admin (inactive Super Admins do not count), and the Access screen does not offer those buttons for that person.
+- The Access people list is searchable by name, email, or role. Connect directory search is under development; its button only shows a toast.
 - An invite expires after seven days. Reissuing one revokes earlier setup tickets and sessions. Disabling a person revokes all app sessions/tickets; re-enabling must not revive them.
 - Local password change and Super Admin password reset are explicitly deferred to future work by the owner. Do not add a reset workflow without a new request. Microsoft login remains the alternative for a forgotten local password; compromised local accounts must remain disabled until safely recovered.
 
@@ -180,7 +183,7 @@ Before any commit, run the whole suite. All of it must pass. Do not commit a red
 
 When you change calculation, stock, spend, auth, invites, roles, chat scope, delete confirmation, or an API status code, add or update a test that fails if the old bug returns. Then run the whole suite, not only the new file.
 
-Tests use temporary SQLite files and real isolated PostgreSQL databases. Install PostgreSQL binaries locally or set `PANTRY_TEST_POSTGRES_URL` to a disposable test service; the suite must fail, not skip, if unavailable. They must not open `server/data/pantry.sqlite` or use real Azure credentials. PostgreSQL tests prove engine behavior, not Azure networking/TLS. Run `npm run build` and `npm run test:browser` for client changes; the latter starts temporary FastAPI on a free loopback port and needs Playwright Chromium (or `PANTRY_BROWSER_CHANNEL=chrome`).
+Tests use temporary SQLite files and real isolated PostgreSQL databases. Install PostgreSQL binaries locally or set `PANTRY_TEST_POSTGRES_URL` to a disposable test service; the suite must fail, not skip, if unavailable. They must not open `server/data/pantry.sqlite` or use real Azure credentials. PostgreSQL tests prove engine behavior, not Azure networking/TLS. Run `npm run build` and `npm run test:browser` for client changes; the latter starts temporary FastAPI on a free loopback port and needs Playwright Chromium (or `PANTRY_BROWSER_CHANNEL=chrome`, or `msedge` on Windows).
 
 A UI change is not done when the suite is green alone. Also use the screen, as the theme section says.
 
@@ -194,7 +197,7 @@ Do not commit secrets, the live database, or a generated invite password. Write 
 - Root scripts are convenience/build tooling. `scripts/package_release.py` stages only Python runtime, requirements, startup and frontend assets; production does not need Node. CI tests Python 3.12, PostgreSQL and Node 24, then uploads a release artifact without deploying it.
 - `frontend/src/screens/Dashboard.jsx` is the shell. `SignIn.jsx` is sign-in and set-password. `OfficeBar.jsx` switches offices from the sidebar. `OfficesPanel.jsx` adds, renames, and assigns an Office Manager. There is no office delete. `AccessPanel.jsx` invites and assigns roles. `SettingsPanel.jsx` edits weekend weight and lookback. `RecordPanel.jsx` records. `PantryCharts.jsx` draws charts. `ChatPanel.jsx` is the assistant.
 - `ProductEditor.jsx` edits name/reorder/warning in Stock. `Purchases.jsx` lists monthly purchases, previews and downloads receipts, corrects a purchase, and removes one. Hide and restore stay off screen.
-- Record kinds are Receipt, Purchase, and Product. Settings is the Super Admin screen and also a Record tab for a Super Admin. All offices cannot record. Pick one office above the name. Receipt reading is a draft for the person who uploaded it. Pages are rendered in memory with the pinned PyMuPDF wheel, the same call on Windows and Linux, with no separate renderer and no temp files. A line the model cannot match stays on that draft until the person chooses a product or discards it. Purchases are saved only when the person approves them.
+- Record kinds are Receipt, Purchase, and Product, and Record opens on Receipt. Settings is the Super Admin screen and also a Record tab for a Super Admin. All offices cannot record. Pick one office above the name. Receipt reading is a draft for the person who uploaded it. Pages are rendered in memory with the pinned PyMuPDF wheel, the same call on Windows and Linux, with no separate renderer and no temp files. A line the model cannot match stays on that draft until the person chooses a product or discards it. Purchases are saved only when the person approves them.
 - [Receipt reading](documents/RECEIPT_READING.md) describes input quality, evidence checks, bounded rereads and review limitations. Checks in `receipt_checks.py` use printed quantities/rates/amounts, never supplier templates or inferred quantities. Ambiguous numeric dates are read as day/month/year and the review says so. A Date or Dated label is ignored, and a year-first month name is not swapped. A reread cannot invent an adjustment or replace a line amount to make the bill balance. Preserve old drafts and the existing purchase approval flow.
 
 ## Do not

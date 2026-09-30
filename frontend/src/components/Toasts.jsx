@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { IconClose } from "../icons.jsx";
 
 export function ToastStack({ toasts, onDismiss }) {
   if (!toasts.length) return null;
@@ -37,7 +38,9 @@ function Toast({ toast, onDismiss }) {
       onBlur={() => setPaused(false)}
     >
       <p>{toast.text}</p>
-      <button type="button" className="texty" onClick={() => onDismiss(toast.id)}>Close</button>
+      <button type="button" className="toast-close" aria-label="Close" onClick={() => onDismiss(toast.id)}>
+        <IconClose />
+      </button>
     </div>
   );
 }

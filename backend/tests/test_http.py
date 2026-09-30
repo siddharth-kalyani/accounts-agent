@@ -31,7 +31,7 @@ async def api(db, people):
 
 
 async def test_route_surface_matches_node(api):
-    expected = json.loads((Path(__file__).parent / "fixtures/http-routes.json").read_text())
+    expected = json.loads((Path(__file__).parent / "fixtures/http-routes.json").read_text(encoding="utf-8"))
     actual = sorted((method.upper(), re.sub(r"\{[^}]+\}", "{}", path)) for path, operations in api.app.openapi()["paths"].items() for method in operations if path.startswith("/api/"))
     assert actual == [tuple(row) for row in expected]
 
