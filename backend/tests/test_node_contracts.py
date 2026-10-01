@@ -12,13 +12,15 @@ from pantry import calc, core, accounts, inventory, conversations, passwords, se
 
 CORPUS = json.loads((Path(__file__).parent / "fixtures/node-contracts.json").read_text(encoding="utf-8"))
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+# Product fields added after the Node baseline; test_inventory covers them.
+LATER_FIELDS = {"countDates", "todayCount", "lastCountedOn", "countedDays"}
 
 
 def normalize(value):
     if isinstance(value, str):
         return UUID.sub("<uuid>", value)
     if isinstance(value, dict):
-        return {k: "<password>" if k == "temporaryPassword" else normalize(v) for k, v in value.items() if k != "countDates"}
+        return {k: "<password>" if k == "temporaryPassword" else normalize(v) for k, v in value.items() if k not in LATER_FIELDS}
     if isinstance(value, list):
         return [normalize(v) for v in value]
     return value

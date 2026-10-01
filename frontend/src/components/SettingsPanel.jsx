@@ -14,7 +14,7 @@ function valid(weight, lookback) {
   return weight !== "" && lookback !== "" && Number.isFinite(w) && w >= 0 && w <= 1 && Number.isInteger(l) && l >= 2 && l <= 36;
 }
 
-export function SettingsPanel({ settings, officeId, officeName, onSaved, onToast, embedded = false }) {
+export function SettingsPanel({ settings, officeId, officeName, onSaved, onToast }) {
   const [weight, setWeight] = useState(String(settings?.weekendWeight ?? 0.2));
   const [lookback, setLookback] = useState(String(settings?.lookbackMonths ?? 3));
   const [error, setError] = useState("");
@@ -77,10 +77,10 @@ export function SettingsPanel({ settings, officeId, officeName, onSaved, onToast
   const preset = WEEKENDS.find(([value]) => Number(value) === Number(weight));
   const moved = (preview?.products || []).filter((row) => row.before !== row.after);
 
-  const body = (
-    <>
-      {embedded ? null : <h2>Settings</h2>}
-      {embedded ? null : <p className="lede">These apply to every office. They change how fast stock is expected to run out.</p>}
+  return (
+    <section className="card record-card">
+      <h2>Settings</h2>
+      <p className="lede">These apply to every office. They change how fast stock is expected to run out.</p>
       {error ? <p className="error" role="alert">{error}</p> : null}
       <form className="settings-form" onSubmit={save}>
         <fieldset className="setting">
@@ -109,7 +109,7 @@ export function SettingsPanel({ settings, officeId, officeName, onSaved, onToast
           <label className="field">Lookback months
             <input inputMode="numeric" min="2" max="36" value={lookback} onChange={(event) => setLookback(event.target.value)} required />
           </label>
-          <p className="note">How many past months of purchases set the rate of use. A whole number from 2 to 36. Fewer months react faster to change.</p>
+          <p className="note">How many past months of shelf counts and purchases set the rate of use. A whole number from 2 to 36. Fewer months react faster to change. A forecast needs two weeks of counts inside them.</p>
         </fieldset>
 
         {changed ? (
@@ -137,10 +137,8 @@ export function SettingsPanel({ settings, officeId, officeName, onSaved, onToast
           <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
-    </>
+    </section>
   );
-  if (embedded) return <div className="receipt-review">{body}</div>;
-  return <section className="card record-card">{body}</section>;
 }
 
 function previewLine(row) {

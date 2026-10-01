@@ -145,7 +145,8 @@ export async function extendedWorkflows({ page, browser, app }) {
     await user.getByLabel('Confirm password', { exact: true }).fill('Invited pantry door 42');
     await user.getByRole('button', { name: 'Save password' }).click();
     await expect(user.getByRole('heading', { name: 'Coffee beans', exact: true })).toBeVisible();
-    assert.equal(await user.getByText('Edit Coffee beans', { exact: true }).count(), 0);
+    assert.equal(await user.getByRole('button', { name: 'Edit Coffee beans', exact: true }).count(), 0);
+    assert.equal(await user.getByRole('button', { name: "Today's stock", exact: true }).count(), 0);
     await user.getByRole('button', { name: 'Open menu' }).click();
     assert.equal(await user.getByRole('button', { name: 'Access', exact: true }).count(), 0);
     await user.getByRole('button', { name: 'Record', exact: true }).click();

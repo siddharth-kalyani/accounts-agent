@@ -201,6 +201,10 @@
   ],
   [
     "PUT",
+    "/api/offices/{}/counts/today"
+  ],
+  [
+    "PUT",
     "/api/purchases/{}"
   ],
   [

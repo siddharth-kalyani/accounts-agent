@@ -245,6 +245,45 @@ export function ranOutOn(product) {
   return since;
 }
 
+// Days of shelf counts before a forecast. Matches COUNT_DAYS_NEEDED in calc.py.
+export const FORECAST_COUNT_DAYS = 14;
+
+export function forecastWait(product) {
+  const left = FORECAST_COUNT_DAYS - (Number(product.countedDays) || 0);
+  if (left > 0 && left < FORECAST_COUNT_DAYS) return `After ${left} more ${left === 1 ? "day" : "days"} of counts`;
+  return "After two weeks of counts";
+}
+
+// What the shelf should hold now: today's count when there is one, otherwise
+// the server's on-hand in whole packs. Used to prefill a count, never saved by itself.
+export function shelfEstimate(product) {
+  if (product?.todayCount != null) return Number(product.todayCount);
+  const onHand = Number(product?.onHand);
+  return Number.isFinite(onHand) ? Math.max(0, Math.round(onHand)) : 0;
+}
+
+// On hand once a purchase is saved. A count already includes purchases dated
+// on or before its day, so a purchase only adds when it is dated after the
+// latest count; on or before, the count already holds it.
+export function onHandAfter(product, date, added) {
+  const base = shelfEstimate(product);
+  const latest = (product?.countDates || []).at(-1) || "";
+  const extra = Number(added);
+  return date && date > latest && Number.isInteger(extra) && extra > 0 ? base + extra : base;
+}
+
+export function countNote(product) {
+  if (product.todayCount != null) return "Counted today";
+  if (product.lastCountedOn) return `Last counted ${indiaDate(product.lastCountedOn)}`;
+  return "Not counted yet";
+}
+
+// A shelf count is a whole number of packs, zero or more.
+export function wholePacks(value) {
+  const text = String(value ?? "").trim();
+  return /^\d{1,7}$/.test(text) && Number(text) <= 1000000 ? Number(text) : null;
+}
+
 // Packs a calendar week at the server's burn rate: five weekdays plus two
 // weekend days at the company weekend weight.
 export function weeklyUse(product, settings) {

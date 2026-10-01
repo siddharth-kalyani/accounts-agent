@@ -85,7 +85,7 @@ export function OfficeCompare({ summary }) {
               {office.forecastSpend != null ? (
                 <i className="hbar-forecast" style={{ width: `${(Number(office.forecastSpend) / max) * 100}%` }} />
               ) : (
-                <span className="hbar-wait">Two months needed</span>
+                <span className="hbar-wait">Two weeks of counts needed</span>
               )}
             </div>
             <span className="hbar-value">
@@ -119,7 +119,7 @@ function RunwayCopy({ product, today, settings }) {
       <dl>
         <div><dt>On hand</dt><dd>{out ? "None left" : packs(product.onHand)}</dd></div>
         <div>
-          <dt>Uses</dt>
+          <dt>Usage</dt>
           <dd title={`${product.burnRatePerEffectiveDay} packs per working day; weekends count as ${settings?.weekendWeight ?? 0.2} of a day`}>{weeklyUse(product, settings)}</dd>
         </div>
       </dl>
@@ -135,13 +135,12 @@ function Runway({ product, today, range }) {
     return <p className="chart-empty">Nothing in these dates.</p>;
   }
   if (points.length < 2) {
-    return <p className="chart-empty">The line appears once two calendar months of purchases are on record.</p>;
+    return <p className="chart-empty">The line appears after two weeks of shelf counts.</p>;
   }
 
-  const reorder = Number(product.reorderLevel);
   const values = points.map((point) => Number(point.onHand));
-  let min = Math.min(...values, reorder, 0);
-  let max = Math.max(...values, reorder, 1);
+  let min = Math.min(...values, 0);
+  let max = Math.max(...values, 1);
   if (min === max) {
     min -= 1;
     max += 1;
@@ -195,7 +194,6 @@ function Runway({ product, today, range }) {
             <text className="chart-label" x={PAD_L - 8} y={y(tick) + 4} textAnchor="end">{formatTick(tick)}</text>
           </g>
         ))}
-        <line className="chart-reorder" x1={PAD_L} x2={VB_W - PAD_R} y1={y(reorder)} y2={y(reorder)} />
         <path className="chart-area-past" d={areaPath(past, x, y)} />
         <path className="chart-area-future" d={areaPath(future, x, y)} />
         <path className="chart-past" d={linePath(past, x, y)} />
@@ -238,7 +236,6 @@ function Runway({ product, today, range }) {
         <span><i className="swatch actual" /> On hand</span>
         <span><i className="swatch buy" /> Purchase</span>
         <span><i className="swatch forecast" /> If no further purchase</span>
-        <span><i className="swatch reorder" /> Reorder</span>
       </div>
       <table className="sr-only">
         <caption>{summary}</caption>
@@ -307,7 +304,7 @@ function ForecastRows({ products }) {
             <span className="hbar-name">{product.name}</span>
             <div className="hbar-track" aria-hidden="true">
               <i className="hbar-actual" style={{ width: `${(actual / max) * 100}%` }} />
-              {next == null ? <span className="hbar-wait">Two months needed</span> : <i className="hbar-forecast" style={{ width: `${(next / max) * 100}%` }} />}
+              {next == null ? <span className="hbar-wait">Two weeks of counts needed</span> : <i className="hbar-forecast" style={{ width: `${(next / max) * 100}%` }} />}
             </div>
             <span className="hbar-value">
               {rupee(product.forecast.basisSpend)}

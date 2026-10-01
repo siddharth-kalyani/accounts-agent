@@ -512,7 +512,7 @@ a.microsoft { width: 100%; margin-top: 8px; }
 .products { display: grid; gap: 8px; margin-top: 12px; }
 .product {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)) 184px;
   gap: 8px 12px;
   padding: 14px 12px;
   border-top: 1px solid var(--line);
@@ -537,8 +537,6 @@ a.microsoft { width: 100%; margin-top: 8px; }
 .pill.not_enough_history { background: transparent; color: var(--wait); border: 1px solid var(--line); }
 .note { grid-column: 1 / -1; margin: 0; min-width: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-.product-editor { grid-column: 1 / -1; width: 100%; }
-.product-editor .fields { max-width: 620px; margin-top: 12px; }
 .purchase-details { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
 .purchase-list { display: grid; gap: 12px; margin-top: 12px; }
 .purchase-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
@@ -786,7 +784,6 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .chart-future { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: 5 4; stroke-linejoin: round; stroke-linecap: round; }
 .chart-area-past { fill: var(--ink); opacity: 0.06; }
 .chart-area-future { fill: var(--accent); opacity: 0.1; }
-.chart-reorder { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; }
 .chart-today { stroke: var(--ink); stroke-width: 1; opacity: 0.35; }
 .chart-now { fill: var(--ink); }
 .chart-buy { fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
@@ -816,7 +813,6 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .swatch.actual { background: var(--ink); }
 .swatch.forecast { background: var(--accent); }
 .swatch.buy { background: var(--paper); border: 2px solid var(--ink); height: 10px; width: 10px; border-radius: 50%; }
-.swatch.reorder { background: var(--muted); height: 0; border-top: 1px dashed var(--muted); }
 .hbars { display: grid; gap: 12px; margin-top: 14px; }
 .hbar { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
 .charts .card-head { flex-wrap: wrap; }
@@ -867,7 +863,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     margin-top: 8px;
   }
   .product > div:first-child,
-  .product .pill,
+  .product .product-end,
   .note { grid-column: 1 / -1; }
   .fields { grid-template-columns: minmax(0, 1fr); }
   .top { min-height: 64px; height: auto; flex-wrap: wrap; padding: 12px; }
@@ -989,7 +985,6 @@ button:disabled,
 .manager-line > span { min-width: 0; display: grid; }
 .manager-line strong { font-weight: 500; overflow-wrap: anywhere; }
 .manager-line small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.reorder-note { display: block; }
 button.office-card {
   width: 100%;
   text-align: left;
@@ -1066,8 +1061,7 @@ button.office-card:hover { background: var(--soft); }
     margin-top: 8px;
   }
   .product > div:first-child,
-  .product .pill,
-  .product .reorder-note,
+  .product .product-end,
   .note { grid-column: 1 / -1; }
   button.office-card { border: 1px solid var(--line); border-radius: 6px; }
 }
@@ -1078,6 +1072,7 @@ button.office-card:hover { background: var(--soft); }
 /* Form controls: one look for every text box and select. */
 .field > input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
 .field > select,
+.count-list input,
 .access-form input,
 .access-form select,
 .access-search input,
@@ -1095,6 +1090,7 @@ button.office-card:hover { background: var(--soft); }
 }
 .field > input:hover:not(:disabled):not([readonly]),
 .field > select:hover:not(:disabled),
+.count-list input:hover,
 .access-form input:hover,
 .access-form select:hover,
 .access-search input:hover,
@@ -1103,6 +1099,7 @@ button.office-card:hover { background: var(--soft); }
 .product-button:hover:not(:disabled) { border-color: var(--muted); }
 .field > input:focus,
 .field > select:focus,
+.count-list input:focus,
 .access-form input:focus,
 .access-form select:focus,
 .access-search input:focus,
@@ -1603,4 +1600,62 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
   .skeleton-hero { padding: 16px; }
   .sk-figure { width: 160px; height: 28px; }
   .drawer { width: 100vw; border-left: 0; }
+}
+
+/* Stock rows: status and the edit button share the last cell. On narrow
+   screens the edit button sits at the card's top right, beside the name. */
+.product-end { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.edit-button { width: 36px; height: 36px; color: var(--muted); flex: none; }
+.edit-button:hover { color: var(--ink); border-color: var(--ink); }
+.count-note.is-counted { color: var(--ink); font-weight: 500; }
+@media (max-width: 1100px) {
+  .product { position: relative; }
+  .product-name { padding-right: 48px; }
+  .product-end { justify-content: flex-start; }
+  .product .edit-button { position: absolute; top: 10px; right: 10px; }
+}
+
+/* A figure not known yet: dotted line and spark in the accent, as on the "Spent in" eyebrow. */
+.pending-mark { display: inline-flex; align-items: center; height: 1.45em; color: var(--accent); vertical-align: middle; }
+.pending-mark svg { display: block; overflow: visible; }
+.pending-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 0.1 4.4; }
+.pending-spark { fill: currentColor; }
+.stat-key .pending-mark { height: 1.6em; }
+
+/* Dialogs with a form. */
+.modal.narrow { width: min(540px, 100%); padding: 20px; }
+.modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+.modal-head > div { min-width: 0; }
+.modal-head h2 { margin: 0; font-size: 20px; font-weight: 500; overflow-wrap: anywhere; }
+.modal-head .lede-small { margin-top: 6px; }
+.modal-head .icon-button { flex: none; width: 36px; height: 36px; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.edit-form, .count-form { display: grid; gap: 16px; }
+.field-block { display: grid; gap: 6px; }
+.field-block .field-hint, .on-hand-hint { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.on-hand-hint { align-self: end; padding-bottom: 12px; }
+
+/* Today's stock: one row per product. */
+.count-progress { margin: 0; color: var(--muted); font-size: 13px; }
+.count-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.count-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.count-list li:first-child { border-top: 0; padding-top: 0; }
+.count-name { display: grid; gap: 2px; min-width: 0; }
+.count-name label { font-weight: 500; overflow-wrap: anywhere; }
+.count-name small { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.count-list li.is-counted .count-name small { color: var(--ink); }
+.count-list input { min-height: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.count-list input[aria-invalid="true"] { border-color: var(--accent); }
+@media (max-width: 600px) {
+  .modal-back { padding: 12px; }
+  .modal.narrow { padding: 16px; max-height: calc(100dvh - 24px); }
+  .count-list li { grid-template-columns: minmax(0, 1fr) 96px; }
+  .on-hand-hint { padding-bottom: 0; }
 }

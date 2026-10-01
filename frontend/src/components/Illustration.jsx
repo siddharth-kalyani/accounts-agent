@@ -62,6 +62,20 @@ export function Illustration({ name = "box", className = "" }) {
   );
 }
 
+// A figure that is not known yet: a dotted line still being drawn, ending in
+// the same red spark as the "Spent in" eyebrow. Stands in for a dash.
+export function Pending({ label = "Not known yet", title }) {
+  return (
+    <span className="pending-mark" title={title || label}>
+      <svg viewBox="0 0 44 18" width="44" height="18" aria-hidden="true" focusable="false">
+        <path className="pending-line" d="M2 14.5 9 11l6 2.5 8-6 6 2" />
+        <path className="pending-spark" d="M37 1.5 38.6 7.4 44 9 38.6 10.6 37 16.5 35.4 10.6 30 9 35.4 7.4Z" />
+      </svg>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 // One empty state for the app: a picture, a short title, what to do next.
 export function EmptyState({ art = "box", title, children, actions, className = "" }) {
   return (

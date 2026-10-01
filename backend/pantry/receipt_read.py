@@ -878,6 +878,8 @@ async def save(db, person, office_id, reading_id, body):
             packs = inventory.parse_packs(item.get("packs"))
             price = inventory.parse_price(item.get("pricePerPack"))
             prepared.append((line, product, packs, price))
+        # Shelf counts entered while reviewing are saved as today's stock with the purchases.
+        counts = await inventory.parse_today_counts(db, office_id, body["counts"]) if body.get("counts") else []
         at = stamp()
         for line, product, packs, price in prepared:
             purchase_id = new_id()
@@ -892,6 +894,9 @@ async def save(db, person, office_id, reading_id, body):
             line["pricePerPack"] = price
             line["matched"] = True
             purchases.append({"purchaseId": purchase_id, "product": product["name"], "date": purchased_on, "packs": packs, "pricePerPack": price, "receiptSaved": False})
+        today = today_in_india(now())
+        for product, packs in counts:
+            await inventory.write_count(db, person, office_id, product, today, packs)
         parsed["date"] = purchased_on
         parsed["lines"] = stored
         parsed["purchases"] = purchases

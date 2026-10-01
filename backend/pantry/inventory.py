@@ -133,6 +133,11 @@ def present_count(row):
     return {out: row[key] for out, key in {"id": "id", "productId": "product_id", "countedOn": "counted_on", "packs": "packs", "createdAt": "created_at", "deletedAt": "deleted_at"}.items()}
 
 
+def automatic_count(count, product, logged):
+    """The zero count written with a new product, untouched by anyone since."""
+    return count["created_at"] == product["created_at"] and count["created_by"] == product["created_by"] and count["id"] not in logged
+
+
 def validate_month(month):
     if not re.fullmatch(r"[1-9]\d{3}-(0[1-9]|1[0-2])", text(month or "")):
         raise HttpError(422, "Choose a valid calendar month.")
@@ -150,15 +155,23 @@ async def get_pantry(db, person, office_id, month=None, *, series=True, config=N
     selected = validate_month(month or today[:7])
     config, names = config or await settings(db), await names_by_id(db)
     frame = calc.next_month_frame(config, today)
+    # Counts someone entered or corrected are logged; the automatic opening count is not.
+    logged = {r["entity_id"] for r in await db.all("SELECT DISTINCT entity_id FROM operation WHERE office_id = ? AND entity_type = 'count'", office_id)}
     products = []
     for product in await db.all("SELECT * FROM pantry_product WHERE office_id = ? ORDER BY created_at, name", office_id):
         purchases = [present_purchase(r) for r in await db.all("SELECT * FROM pantry_purchase WHERE product_id = ?", product["id"])]
-        counts = [present_count(r) for r in await db.all("SELECT * FROM pantry_count WHERE product_id = ?", product["id"])]
-        math_result = calc.compute_product(product={"reorderLevel": product["reorder_level"], "warningEffectiveDays": product["warning_effective_days"]}, purchases=purchases, counts=counts, settings=config, today=today)
+        rows = await db.all("SELECT * FROM pantry_count WHERE product_id = ?", product["id"])
+        counts = [{**present_count(r), "automatic": automatic_count(r, product, logged)} for r in rows]
+        # Due is driven by the warning days alone: the run-out date is when on-hand
+        # reaches zero. A stored reorder level is kept for history and not used.
+        math_result = calc.compute_product(product={"reorderLevel": 0, "warningEffectiveDays": product["warning_effective_days"]}, purchases=purchases, counts=counts, settings=config, today=today)
         month_stats, basis = calc.month_figures(purchases, selected), calc.month_figures(purchases, today[:7])
         forecast = calc.project_month(purchases=purchases, math=math_result, settings=config, today=today, basisPacks=basis["packsAdded"], basisSpend=basis["spend"])
         receipt = await db.get("SELECT purchase_id FROM pantry_receipt r JOIN pantry_purchase p ON p.id = r.purchase_id WHERE p.product_id = ? AND r.deleted_at IS NULL LIMIT 1", product["id"])
-        row = {"productId": product["id"], "name": product["name"], "deletedAt": product["deleted_at"], "createdBy": names.get(product["created_by"], "Unknown"), "createdAt": product["created_at"], "createdAtLabel": calc.format_when(product["created_at"]), **math_result, **month_stats, "history": calc.month_history(purchases, config, today), "forecast": forecast, "hasReceipt": bool(receipt), "countDates": sorted({c["countedOn"] for c in counts if not c.get("deletedAt")})}
+        live = [c for c in counts if not c.get("deletedAt") and c["countedOn"] <= today]
+        hand = [c["countedOn"] for c in live if not c["automatic"]]
+        row = {"productId": product["id"], "name": product["name"], "deletedAt": product["deleted_at"], "createdBy": names.get(product["created_by"], "Unknown"), "createdAt": product["created_at"], "createdAtLabel": calc.format_when(product["created_at"]), **math_result, **month_stats, "history": calc.month_history(purchases, config, today), "forecast": forecast, "hasReceipt": bool(receipt), "countDates": sorted({c["countedOn"] for c in counts if not c.get("deletedAt")}),
+               "todayCount": next((c["packs"] for c in live if c["countedOn"] == today), None), "lastCountedOn": max(hand, default=None), "countedDays": calc.counted_days(counts, config, today)}
         if series:
             row["series"] = calc.stock_series(purchases=purchases, counts=counts, settings=config, today=today, burnRate=math_result["burnRatePerEffectiveDay"], expectedDate=math_result["expectedDate"], onHand=math_result["onHand"])
         products.append(row)
@@ -214,14 +227,23 @@ async def update_product(db, person, product_id, body):
     reorder = number(body["reorderLevel"]) if body.get("reorderLevel") is not None else product["reorder_level"]
     warning = number(body["warningEffectiveDays"]) if body.get("warningEffectiveDays") is not None else product["warning_effective_days"]
     validate_product_name(name)
+    # Older clients still send a reorder level. It is checked and kept, but no
+    # longer changes the status: Due comes from the warning days alone.
     if not math.isfinite(reorder) or reorder != int(reorder) or not 0 <= reorder <= 1_000_000:
         raise HttpError(422, "Reorder level is a whole number from 0 to 1000000.")
     if not math.isfinite(warning) or warning != int(warning) or not 1 <= warning <= 366:
-        raise HttpError(422, "The warning window is from 1 to 366 effective days.")
+        raise HttpError(422, "Warn from 1 to 366 working days ahead.")
+    on_hand = parse_packs(body["onHand"], allow_zero=True) if body.get("onHand") is not None else None
     if await db.get("SELECT id FROM pantry_product WHERE office_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL AND id != ?", product["office_id"], name, product_id):
         raise HttpError(422, "That product name is already in use at this office.")
-    await db.run("UPDATE pantry_product SET name = ?, reorder_level = ?, warning_effective_days = ? WHERE id = ?", name, int(reorder), int(warning), product_id)
-    await log(db, person["id"], "product.rename" if name != product["name"] else "product.reorder", "product", product_id, product["office_id"], f"Updated {name}.")
+    changed = (name, int(reorder), int(warning)) != (product["name"], product["reorder_level"], product["warning_effective_days"])
+    if changed or on_hand is None:
+        await db.run("UPDATE pantry_product SET name = ?, reorder_level = ?, warning_effective_days = ? WHERE id = ?", name, int(reorder), int(warning), product_id)
+        await log(db, person["id"], "product.rename" if name != product["name"] else "product.reorder", "product", product_id, product["office_id"], f"Updated {name}.")
+    if on_hand is not None:
+        if product["deleted_at"]:
+            raise HttpError(422, "That product is not available for a new entry.")
+        await write_count(db, person, product["office_id"], {**product, "name": name}, calc.today_in_india(now()), on_hand)
     return {"productId": product_id, "name": name}
 
 
@@ -302,7 +324,7 @@ async def active_product(db, office_id, product_id):
 
 def purchase_hash(body, receipt):
     receipt_hash = hashlib.sha256(receipt["bytes"]).hexdigest() if receipt and "bytes" in receipt else ""
-    payload = {k: body[k] for k in ("productId", "date", "packs", "pricePerPack") if k in body}
+    payload = {k: body[k] for k in ("productId", "date", "packs", "pricePerPack", "onHand") if k in body}
     return hashlib.sha256(dumps({**payload, "receipt": receipt_hash}).encode()).hexdigest()
 
 
@@ -312,6 +334,8 @@ async def create_purchase(db, person, office_id, body, receipt=None, idempotency
     require_write(person, office_id)
     product = await active_product(db, office_id, body.get("productId"))
     purchased_on, packs, price = parse_date(body.get("date")), parse_packs(body.get("packs")), parse_price(body.get("pricePerPack"))
+    # The shelf counted with this purchase put away, saved as today's count.
+    on_hand = parse_packs(body["onHand"], allow_zero=True) if body.get("onHand") is not None else None
     key = text(idempotency or "").strip()
     if key and not re.fullmatch(r"[A-Za-z0-9._:-]{8,200}", key):
         raise HttpError(422, "The save key is not valid. Retry the purchase.")
@@ -326,6 +350,8 @@ async def create_purchase(db, person, office_id, body, receipt=None, idempotency
         else:
             await db.run("INSERT INTO pantry_purchase (id, product_id, purchased_on, packs, price_per_pack, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", purchase_id, product["id"], purchased_on, packs, price, person["id"], at)
             await log(db, person["id"], "purchase.create", "purchase", purchase_id, office_id, f"Entered {packs} packs of {product['name']} on {purchased_on} at ₹{price}.")
+            if on_hand is not None:
+                await write_count(db, person, office_id, product, calc.today_in_india(now()), on_hand)
             result = {"purchaseId": purchase_id, "product": product["name"], "date": purchased_on, "packs": packs, "pricePerPack": price, "receiptSaved": False}
             if key:
                 await db.run("INSERT INTO idempotency (person_id, key, request_hash, body, created_at) VALUES (?, ?, ?, ?, ?)", person["id"], key, hashed, dumps(result), at)
@@ -413,12 +439,8 @@ async def correct_purchase(db, person, purchase_id, body):
     return {"purchaseId": purchase_id}
 
 
-@transactional
-async def upsert_count(db, person, office_id, body):
-    person = await live_person(db, person)
-    require_write(person, office_id)
-    product = await active_product(db, office_id, body.get("productId"))
-    counted_on, packs = parse_date(body.get("date")), parse_packs(body.get("packs"), allow_zero=True)
+async def write_count(db, person, office_id, product, counted_on, packs):
+    """Enter or correct one shelf count. The caller authorizes and opens the transaction."""
     existing = await db.get("SELECT * FROM pantry_count WHERE product_id = ? AND counted_on = ?", product["id"], counted_on)
     if not existing:
         count_id = new_id()
@@ -428,7 +450,47 @@ async def upsert_count(db, person, office_id, body):
         count_id = existing["id"]
         await db.run("UPDATE pantry_count SET packs = ?, deleted_by = NULL, deleted_at = NULL WHERE id = ?", packs, count_id)
         await log(db, person["id"], "count.correct", "count", count_id, office_id, f"Updated the {counted_on} count of {product['name']} to {packs}. The first person on that count stays.")
-    return {"countId": count_id}
+    return count_id
+
+
+@transactional
+async def upsert_count(db, person, office_id, body):
+    person = await live_person(db, person)
+    require_write(person, office_id)
+    product = await active_product(db, office_id, body.get("productId"))
+    counted_on, packs = parse_date(body.get("date")), parse_packs(body.get("packs"), allow_zero=True)
+    return {"countId": await write_count(db, person, office_id, product, counted_on, packs)}
+
+
+MAX_COUNTS = 200
+
+
+async def parse_today_counts(db, office_id, items):
+    """Today's shelf counts as (product, packs), checked before anything is written."""
+    if not isinstance(items, list) or not items or len(items) > MAX_COUNTS:
+        raise HttpError(422, "Enter today's stock for at least one product.")
+    parsed, seen = [], set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise HttpError(422, "Enter today's stock for at least one product.")
+        product = await active_product(db, office_id, item.get("productId"))
+        if product["id"] in seen:
+            raise HttpError(422, f"{product['name']} is in today's stock twice.")
+        seen.add(product["id"])
+        parsed.append((product, parse_packs(item.get("packs"), allow_zero=True)))
+    return parsed
+
+
+@transactional
+async def save_today_counts(db, person, office_id, body):
+    """Today's stock: hand counts for several products at once, all or none."""
+    person = await live_person(db, person)
+    require_write(person, office_id)
+    today = calc.today_in_india(now())
+    counts = await parse_today_counts(db, office_id, (body or {}).get("counts"))
+    for product, packs in counts:
+        await write_count(db, person, office_id, product, today, packs)
+    return {"date": today, "saved": len(counts)}
 
 
 @transactional

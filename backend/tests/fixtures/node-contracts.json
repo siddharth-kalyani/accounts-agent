@@ -21777,7 +21777,7 @@
       "expected": {
         "error": {
           "status": 422,
-          "message": "The warning window is from 1 to 366 effective days."
+          "message": "Warn from 1 to 366 working days ahead."
         }
       }
     },
@@ -25345,7 +25345,7 @@
               "expectedDate": null,
               "coverEffectiveDays": null,
               "status": "not_enough_history",
-              "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+              "message": "The forecast starts once this product has two weeks of shelf counts.",
               "trace": null,
               "history": [
                 {
@@ -25526,7 +25526,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -25988,7 +25988,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -26064,7 +26064,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -26863,7 +26863,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -26946,7 +26946,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -27046,7 +27046,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -27513,7 +27513,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -27628,7 +27628,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -27690,7 +27690,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -27833,7 +27833,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -28625,7 +28625,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -30934,7 +30934,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -31007,7 +31007,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -31122,7 +31122,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -31832,7 +31832,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -32249,7 +32249,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -34917,7 +34917,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -35368,7 +35368,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -35497,7 +35497,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -35565,7 +35565,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -36085,7 +36085,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -36586,7 +36586,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -37695,7 +37695,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -37768,7 +37768,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -37888,7 +37888,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -37971,7 +37971,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -44989,7 +44989,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -45146,7 +45146,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -45243,7 +45243,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -45366,7 +45366,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -45468,7 +45468,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -45593,20 +45593,28 @@
         "math": {
           "reorderLevel": 0,
           "warningEffectiveDays": 12,
-          "onHand": "23.33",
-          "burnRatePerEffectiveDay": "3.35",
-          "expectedDate": "2026-09-28",
-          "coverEffectiveDays": "7.0",
+          "onHand": "22.45",
+          "burnRatePerEffectiveDay": "5.10",
+          "expectedDate": "2026-09-25",
+          "coverEffectiveDays": "4.4",
           "status": "due",
           "message": null,
           "trace": {
+            "basis": "counts",
+            "from": "2026-09-01",
+            "to": "2026-09-19",
             "months": [
               "2026-08",
               "2026-09"
             ],
-            "packs": 144,
-            "effectiveDays": "43"
+            "packs": 79,
+            "effectiveDays": "15.5"
           }
+        },
+        "month": {
+          "packsAdded": 73,
+          "spend": "29004.33",
+          "latestPricePerPack": "303.47"
         },
         "history": [
           {
@@ -45626,16 +45634,11 @@
             "recorded": true
           }
         ],
-        "month": {
-          "packsAdded": 73,
-          "spend": "29004.33",
-          "latestPricePerPack": "303.47"
-        },
         "forecast": {
           "month": "2026-10",
           "effectiveDays": "26.5",
-          "packs": "88.78",
-          "spend": "29881.57",
+          "packs": "135.15",
+          "spend": "45488.79",
           "averagePricePerPack": "336.58",
           "basisMonth": "2026-09",
           "basisPacks": 73,
@@ -45649,154 +45652,154 @@
           },
           {
             "date": "2026-08-02",
-            "onHand": "-1.68",
+            "onHand": "-2.55",
             "projected": false
           },
           {
             "date": "2026-08-03",
-            "onHand": "-5.03",
+            "onHand": "-7.65",
             "projected": false
           },
           {
             "date": "2026-08-04",
-            "onHand": "-8.38",
+            "onHand": "-12.75",
             "projected": false
           },
           {
             "date": "2026-08-05",
-            "onHand": "-11.73",
+            "onHand": "-17.85",
             "projected": false
           },
           {
             "date": "2026-08-06",
-            "onHand": "-15.08",
+            "onHand": "-22.95",
             "projected": false
           },
           {
             "date": "2026-08-07",
-            "onHand": "-18.43",
+            "onHand": "-28.05",
             "projected": false
           },
           {
             "date": "2026-08-08",
-            "onHand": "-20.10",
+            "onHand": "-30.60",
             "projected": false
           },
           {
             "date": "2026-08-09",
-            "onHand": "-21.78",
+            "onHand": "-33.15",
             "projected": false
           },
           {
             "date": "2026-08-10",
-            "onHand": "-25.13",
+            "onHand": "-38.25",
             "projected": false
           },
           {
             "date": "2026-08-11",
-            "onHand": "-28.48",
+            "onHand": "-43.35",
             "projected": false
           },
           {
             "date": "2026-08-12",
-            "onHand": "-2.83",
+            "onHand": "-19.45",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-13",
-            "onHand": "-6.18",
+            "onHand": "-24.55",
             "projected": false
           },
           {
             "date": "2026-08-14",
-            "onHand": "-9.53",
+            "onHand": "-29.65",
             "projected": false
           },
           {
             "date": "2026-08-15",
-            "onHand": "-11.20",
+            "onHand": "-32.20",
             "projected": false
           },
           {
             "date": "2026-08-16",
-            "onHand": "-12.88",
+            "onHand": "-34.75",
             "projected": false
           },
           {
             "date": "2026-08-17",
-            "onHand": "-16.23",
+            "onHand": "-39.85",
             "projected": false
           },
           {
             "date": "2026-08-18",
-            "onHand": "-19.58",
+            "onHand": "-44.95",
             "projected": false
           },
           {
             "date": "2026-08-19",
-            "onHand": "19.08",
+            "onHand": "-8.05",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-20",
-            "onHand": "15.73",
+            "onHand": "-13.15",
             "projected": false
           },
           {
             "date": "2026-08-21",
-            "onHand": "12.38",
+            "onHand": "-18.25",
             "projected": false
           },
           {
             "date": "2026-08-22",
-            "onHand": "10.70",
+            "onHand": "-20.80",
             "projected": false
           },
           {
             "date": "2026-08-23",
-            "onHand": "9.03",
+            "onHand": "-23.35",
             "projected": false
           },
           {
             "date": "2026-08-24",
-            "onHand": "5.68",
+            "onHand": "-28.45",
             "projected": false
           },
           {
             "date": "2026-08-25",
-            "onHand": "2.33",
+            "onHand": "-33.55",
             "projected": false
           },
           {
             "date": "2026-08-26",
-            "onHand": "-1.03",
+            "onHand": "-38.65",
             "projected": false
           },
           {
             "date": "2026-08-27",
-            "onHand": "-4.38",
+            "onHand": "-43.75",
             "projected": false
           },
           {
             "date": "2026-08-28",
-            "onHand": "-7.73",
+            "onHand": "-48.85",
             "projected": false
           },
           {
             "date": "2026-08-29",
-            "onHand": "-9.40",
+            "onHand": "-51.40",
             "projected": false
           },
           {
             "date": "2026-08-30",
-            "onHand": "-11.08",
+            "onHand": "-53.95",
             "projected": false
           },
           {
             "date": "2026-08-31",
-            "onHand": "-14.43",
+            "onHand": "-59.05",
             "projected": false
           },
           {
@@ -45807,89 +45810,89 @@
           },
           {
             "date": "2026-09-02",
-            "onHand": "27.65",
+            "onHand": "25.90",
             "projected": false
           },
           {
             "date": "2026-09-03",
-            "onHand": "24.30",
+            "onHand": "20.80",
             "projected": false
           },
           {
             "date": "2026-09-04",
-            "onHand": "58.95",
+            "onHand": "53.70",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-09-05",
-            "onHand": "57.28",
+            "onHand": "51.15",
             "projected": false
           },
           {
             "date": "2026-09-06",
-            "onHand": "55.60",
+            "onHand": "48.60",
             "projected": false
           },
           {
             "date": "2026-09-07",
-            "onHand": "52.25",
+            "onHand": "43.50",
             "projected": false
           },
           {
             "date": "2026-09-08",
-            "onHand": "48.90",
+            "onHand": "38.40",
             "projected": false
           },
           {
             "date": "2026-09-09",
-            "onHand": "45.55",
+            "onHand": "33.30",
             "projected": false
           },
           {
             "date": "2026-09-10",
-            "onHand": "42.20",
+            "onHand": "28.20",
             "projected": false
           },
           {
             "date": "2026-09-11",
-            "onHand": "73.85",
+            "onHand": "58.10",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-09-12",
-            "onHand": "72.18",
+            "onHand": "55.55",
             "projected": false
           },
           {
             "date": "2026-09-13",
-            "onHand": "70.50",
+            "onHand": "53.00",
             "projected": false
           },
           {
             "date": "2026-09-14",
-            "onHand": "67.15",
+            "onHand": "47.90",
             "projected": false
           },
           {
             "date": "2026-09-15",
-            "onHand": "63.80",
+            "onHand": "42.80",
             "projected": false
           },
           {
             "date": "2026-09-16",
-            "onHand": "60.45",
+            "onHand": "37.70",
             "projected": false
           },
           {
             "date": "2026-09-17",
-            "onHand": "57.10",
+            "onHand": "32.60",
             "projected": false
           },
           {
             "date": "2026-09-18",
-            "onHand": "53.75",
+            "onHand": "27.50",
             "projected": false
           },
           {
@@ -45900,84 +45903,79 @@
           },
           {
             "date": "2026-09-20",
-            "onHand": "23.33",
+            "onHand": "22.45",
             "projected": false,
             "marker": "today"
           },
           {
             "date": "2026-09-21",
-            "onHand": "19.98",
+            "onHand": "17.35",
             "projected": true
           },
           {
             "date": "2026-09-22",
-            "onHand": "16.63",
+            "onHand": "12.25",
             "projected": true
           },
           {
             "date": "2026-09-23",
-            "onHand": "13.28",
+            "onHand": "7.15",
             "projected": true
           },
           {
             "date": "2026-09-24",
-            "onHand": "9.93",
+            "onHand": "2.05",
             "projected": true
           },
           {
             "date": "2026-09-25",
-            "onHand": "6.58",
-            "projected": true
-          },
-          {
-            "date": "2026-09-26",
-            "onHand": "4.90",
-            "projected": true
-          },
-          {
-            "date": "2026-09-27",
-            "onHand": "3.23",
-            "projected": true
-          },
-          {
-            "date": "2026-09-28",
-            "onHand": "-0.13",
+            "onHand": "-3.05",
             "projected": true,
             "marker": "expected"
           },
           {
+            "date": "2026-09-26",
+            "onHand": "-5.60",
+            "projected": true
+          },
+          {
+            "date": "2026-09-27",
+            "onHand": "-8.15",
+            "projected": true
+          },
+          {
+            "date": "2026-09-28",
+            "onHand": "-13.25",
+            "projected": true
+          },
+          {
             "date": "2026-09-29",
-            "onHand": "-3.48",
+            "onHand": "-18.35",
             "projected": true
           },
           {
             "date": "2026-09-30",
-            "onHand": "-6.83",
+            "onHand": "-23.45",
             "projected": true
           },
           {
             "date": "2026-10-01",
-            "onHand": "-10.18",
+            "onHand": "-28.55",
             "projected": true
           },
           {
             "date": "2026-10-02",
-            "onHand": "-13.53",
+            "onHand": "-33.65",
             "projected": true
           },
           {
             "date": "2026-10-03",
-            "onHand": "-15.20",
+            "onHand": "-36.20",
             "projected": true
           },
           {
             "date": "2026-10-04",
-            "onHand": "-16.88",
-            "projected": true
-          },
-          {
-            "date": "2026-10-05",
-            "onHand": "-20.23",
+            "onHand": "-38.75",
             "projected": true
           }
         ]
@@ -49027,7 +49025,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -49510,7 +49508,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -49610,7 +49608,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -49672,7 +49670,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -51806,7 +51804,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -51883,7 +51881,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -51945,7 +51943,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -52405,7 +52403,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -52896,7 +52894,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -53016,7 +53014,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -53159,20 +53157,28 @@
         "math": {
           "reorderLevel": 6,
           "warningEffectiveDays": 4,
-          "onHand": "-0.34",
-          "burnRatePerEffectiveDay": "2.68",
+          "onHand": "0.42",
+          "burnRatePerEffectiveDay": "1.16",
           "expectedDate": "2026-09-20",
           "coverEffectiveDays": "0.0",
           "status": "due",
           "message": null,
           "trace": {
+            "basis": "counts",
+            "from": "2026-09-01",
+            "to": "2026-09-19",
             "months": [
               "2026-07",
               "2026-08"
             ],
-            "packs": 142,
-            "effectiveDays": "53"
+            "packs": 18,
+            "effectiveDays": "15.5"
           }
+        },
+        "month": {
+          "packsAdded": 0,
+          "spend": "0.00",
+          "latestPricePerPack": null
         },
         "history": [
           {
@@ -53224,16 +53230,11 @@
             "recorded": false
           }
         ],
-        "month": {
-          "packsAdded": 0,
-          "spend": "0.00",
-          "latestPricePerPack": null
-        },
         "forecast": {
           "month": "2026-10",
           "effectiveDays": "26.5",
-          "packs": "71.02",
-          "spend": "11263.77",
+          "packs": "30.74",
+          "spend": "4875.36",
           "averagePricePerPack": "158.60",
           "basisMonth": "2026-09",
           "basisPacks": 0,
@@ -53247,296 +53248,296 @@
           },
           {
             "date": "2026-07-05",
-            "onHand": "59.66",
+            "onHand": "60.42",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-07-06",
-            "onHand": "56.98",
+            "onHand": "59.26",
             "projected": false
           },
           {
             "date": "2026-07-07",
-            "onHand": "54.30",
+            "onHand": "58.10",
             "projected": false
           },
           {
             "date": "2026-07-08",
-            "onHand": "99.62",
+            "onHand": "104.94",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-07-09",
-            "onHand": "96.94",
+            "onHand": "103.78",
             "projected": false
           },
           {
             "date": "2026-07-10",
-            "onHand": "94.26",
+            "onHand": "102.62",
             "projected": false
           },
           {
             "date": "2026-07-11",
-            "onHand": "92.92",
+            "onHand": "102.04",
             "projected": false
           },
           {
             "date": "2026-07-12",
-            "onHand": "91.58",
+            "onHand": "101.46",
             "projected": false
           },
           {
             "date": "2026-07-13",
-            "onHand": "88.90",
+            "onHand": "100.30",
             "projected": false
           },
           {
             "date": "2026-07-14",
-            "onHand": "86.22",
+            "onHand": "99.14",
             "projected": false
           },
           {
             "date": "2026-07-15",
-            "onHand": "83.54",
+            "onHand": "97.98",
             "projected": false
           },
           {
             "date": "2026-07-16",
-            "onHand": "80.86",
+            "onHand": "96.82",
             "projected": false
           },
           {
             "date": "2026-07-17",
-            "onHand": "78.18",
+            "onHand": "95.66",
             "projected": false
           },
           {
             "date": "2026-07-18",
-            "onHand": "76.84",
+            "onHand": "95.08",
             "projected": false
           },
           {
             "date": "2026-07-19",
-            "onHand": "75.50",
+            "onHand": "94.50",
             "projected": false
           },
           {
             "date": "2026-07-20",
-            "onHand": "72.82",
+            "onHand": "93.34",
             "projected": false
           },
           {
             "date": "2026-07-21",
-            "onHand": "70.14",
+            "onHand": "92.18",
             "projected": false
           },
           {
             "date": "2026-07-22",
-            "onHand": "67.46",
+            "onHand": "91.02",
             "projected": false
           },
           {
             "date": "2026-07-23",
-            "onHand": "64.78",
+            "onHand": "89.86",
             "projected": false
           },
           {
             "date": "2026-07-24",
-            "onHand": "62.10",
+            "onHand": "88.70",
             "projected": false
           },
           {
             "date": "2026-07-25",
-            "onHand": "60.76",
+            "onHand": "88.12",
             "projected": false
           },
           {
             "date": "2026-07-26",
-            "onHand": "59.42",
+            "onHand": "87.54",
             "projected": false
           },
           {
             "date": "2026-07-27",
-            "onHand": "56.74",
+            "onHand": "86.38",
             "projected": false
           },
           {
             "date": "2026-07-28",
-            "onHand": "54.06",
+            "onHand": "85.22",
             "projected": false
           },
           {
             "date": "2026-07-29",
-            "onHand": "51.38",
+            "onHand": "84.06",
             "projected": false
           },
           {
             "date": "2026-07-30",
-            "onHand": "48.70",
+            "onHand": "82.90",
             "projected": false
           },
           {
             "date": "2026-07-31",
-            "onHand": "46.02",
+            "onHand": "81.74",
             "projected": false
           },
           {
             "date": "2026-08-01",
-            "onHand": "76.68",
+            "onHand": "113.16",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-02",
-            "onHand": "76.34",
+            "onHand": "113.58",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-03",
-            "onHand": "73.66",
+            "onHand": "112.42",
             "projected": false
           },
           {
             "date": "2026-08-04",
-            "onHand": "70.98",
+            "onHand": "111.26",
             "projected": false
           },
           {
             "date": "2026-08-05",
-            "onHand": "68.30",
+            "onHand": "110.10",
             "projected": false
           },
           {
             "date": "2026-08-06",
-            "onHand": "65.62",
+            "onHand": "108.94",
             "projected": false
           },
           {
             "date": "2026-08-07",
-            "onHand": "62.94",
+            "onHand": "107.78",
             "projected": false
           },
           {
             "date": "2026-08-08",
-            "onHand": "61.60",
+            "onHand": "107.20",
             "projected": false
           },
           {
             "date": "2026-08-09",
-            "onHand": "60.26",
+            "onHand": "106.62",
             "projected": false
           },
           {
             "date": "2026-08-10",
-            "onHand": "57.58",
+            "onHand": "105.46",
             "projected": false
           },
           {
             "date": "2026-08-11",
-            "onHand": "54.90",
+            "onHand": "104.30",
             "projected": false
           },
           {
             "date": "2026-08-12",
-            "onHand": "52.22",
+            "onHand": "103.14",
             "projected": false
           },
           {
             "date": "2026-08-13",
-            "onHand": "49.54",
+            "onHand": "101.98",
             "projected": false
           },
           {
             "date": "2026-08-14",
-            "onHand": "46.86",
+            "onHand": "100.82",
             "projected": false
           },
           {
             "date": "2026-08-15",
-            "onHand": "45.52",
+            "onHand": "100.24",
             "projected": false
           },
           {
             "date": "2026-08-16",
-            "onHand": "44.18",
+            "onHand": "99.66",
             "projected": false
           },
           {
             "date": "2026-08-17",
-            "onHand": "41.50",
+            "onHand": "98.50",
             "projected": false
           },
           {
             "date": "2026-08-18",
-            "onHand": "38.82",
+            "onHand": "97.34",
             "projected": false
           },
           {
             "date": "2026-08-19",
-            "onHand": "36.14",
+            "onHand": "96.18",
             "projected": false
           },
           {
             "date": "2026-08-20",
-            "onHand": "33.46",
+            "onHand": "95.02",
             "projected": false
           },
           {
             "date": "2026-08-21",
-            "onHand": "30.78",
+            "onHand": "93.86",
             "projected": false
           },
           {
             "date": "2026-08-22",
-            "onHand": "29.44",
+            "onHand": "93.28",
             "projected": false
           },
           {
             "date": "2026-08-23",
-            "onHand": "28.10",
+            "onHand": "92.70",
             "projected": false
           },
           {
             "date": "2026-08-24",
-            "onHand": "25.42",
+            "onHand": "91.54",
             "projected": false
           },
           {
             "date": "2026-08-25",
-            "onHand": "22.74",
+            "onHand": "90.38",
             "projected": false
           },
           {
             "date": "2026-08-26",
-            "onHand": "20.06",
+            "onHand": "89.22",
             "projected": false
           },
           {
             "date": "2026-08-27",
-            "onHand": "17.38",
+            "onHand": "88.06",
             "projected": false
           },
           {
             "date": "2026-08-28",
-            "onHand": "14.70",
+            "onHand": "86.90",
             "projected": false
           },
           {
             "date": "2026-08-29",
-            "onHand": "13.36",
+            "onHand": "86.32",
             "projected": false
           },
           {
             "date": "2026-08-30",
-            "onHand": "12.02",
+            "onHand": "85.74",
             "projected": false
           },
           {
             "date": "2026-08-31",
-            "onHand": "9.34",
+            "onHand": "84.58",
             "projected": false
           },
           {
@@ -53547,87 +53548,87 @@
           },
           {
             "date": "2026-09-02",
-            "onHand": "16.32",
+            "onHand": "17.84",
             "projected": false
           },
           {
             "date": "2026-09-03",
-            "onHand": "13.64",
+            "onHand": "16.68",
             "projected": false
           },
           {
             "date": "2026-09-04",
-            "onHand": "10.96",
+            "onHand": "15.52",
             "projected": false
           },
           {
             "date": "2026-09-05",
-            "onHand": "9.62",
+            "onHand": "14.94",
             "projected": false
           },
           {
             "date": "2026-09-06",
-            "onHand": "8.28",
+            "onHand": "14.36",
             "projected": false
           },
           {
             "date": "2026-09-07",
-            "onHand": "5.60",
+            "onHand": "13.20",
             "projected": false
           },
           {
             "date": "2026-09-08",
-            "onHand": "2.92",
+            "onHand": "12.04",
             "projected": false
           },
           {
             "date": "2026-09-09",
-            "onHand": "0.24",
+            "onHand": "10.88",
             "projected": false
           },
           {
             "date": "2026-09-10",
-            "onHand": "-2.44",
+            "onHand": "9.72",
             "projected": false
           },
           {
             "date": "2026-09-11",
-            "onHand": "-5.12",
+            "onHand": "8.56",
             "projected": false
           },
           {
             "date": "2026-09-12",
-            "onHand": "-6.46",
+            "onHand": "7.98",
             "projected": false
           },
           {
             "date": "2026-09-13",
-            "onHand": "-7.80",
+            "onHand": "7.40",
             "projected": false
           },
           {
             "date": "2026-09-14",
-            "onHand": "-10.48",
+            "onHand": "6.24",
             "projected": false
           },
           {
             "date": "2026-09-15",
-            "onHand": "-13.16",
+            "onHand": "5.08",
             "projected": false
           },
           {
             "date": "2026-09-16",
-            "onHand": "-15.84",
+            "onHand": "3.92",
             "projected": false
           },
           {
             "date": "2026-09-17",
-            "onHand": "-18.52",
+            "onHand": "2.76",
             "projected": false
           },
           {
             "date": "2026-09-18",
-            "onHand": "-21.20",
+            "onHand": "1.60",
             "projected": false
           },
           {
@@ -53638,78 +53639,78 @@
           },
           {
             "date": "2026-09-20",
-            "onHand": "-0.34",
+            "onHand": "0.42",
             "projected": false,
             "marker": "today"
           },
           {
             "date": "2026-09-21",
-            "onHand": "-3.02",
+            "onHand": "-0.74",
             "projected": true
           },
           {
             "date": "2026-09-22",
-            "onHand": "-5.70",
+            "onHand": "-1.90",
             "projected": true
           },
           {
             "date": "2026-09-23",
-            "onHand": "-8.38",
+            "onHand": "-3.06",
             "projected": true
           },
           {
             "date": "2026-09-24",
-            "onHand": "-11.06",
+            "onHand": "-4.22",
             "projected": true
           },
           {
             "date": "2026-09-25",
-            "onHand": "-13.74",
+            "onHand": "-5.38",
             "projected": true
           },
           {
             "date": "2026-09-26",
-            "onHand": "-15.08",
+            "onHand": "-5.96",
             "projected": true
           },
           {
             "date": "2026-09-27",
-            "onHand": "-16.42",
+            "onHand": "-6.54",
             "projected": true
           },
           {
             "date": "2026-09-28",
-            "onHand": "-19.10",
+            "onHand": "-7.70",
             "projected": true
           },
           {
             "date": "2026-09-29",
-            "onHand": "-21.78",
+            "onHand": "-8.86",
             "projected": true
           },
           {
             "date": "2026-09-30",
-            "onHand": "-24.46",
+            "onHand": "-10.02",
             "projected": true
           },
           {
             "date": "2026-10-01",
-            "onHand": "-27.14",
+            "onHand": "-11.18",
             "projected": true
           },
           {
             "date": "2026-10-02",
-            "onHand": "-29.82",
+            "onHand": "-12.34",
             "projected": true
           },
           {
             "date": "2026-10-03",
-            "onHand": "-31.16",
+            "onHand": "-12.92",
             "projected": true
           },
           {
             "date": "2026-10-04",
-            "onHand": "-32.50",
+            "onHand": "-13.50",
             "projected": true
           }
         ]
@@ -55152,7 +55153,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -55243,7 +55244,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -55340,7 +55341,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -55781,7 +55782,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -55849,7 +55850,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -57534,7 +57535,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -57617,13 +57618,25 @@
         "math": {
           "reorderLevel": 4,
           "warningEffectiveDays": 8,
-          "onHand": "37.00",
-          "burnRatePerEffectiveDay": null,
-          "expectedDate": null,
-          "coverEffectiveDays": null,
-          "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
-          "trace": null
+          "onHand": "36.94",
+          "burnRatePerEffectiveDay": "0.13",
+          "expectedDate": "2027-07-13",
+          "coverEffectiveDays": "253.4",
+          "status": "on_track",
+          "message": null,
+          "trace": {
+            "basis": "counts",
+            "from": "2026-09-01",
+            "to": "2026-09-19",
+            "months": [],
+            "packs": 2,
+            "effectiveDays": "15.5"
+          }
+        },
+        "month": {
+          "packsAdded": 0,
+          "spend": "0.00",
+          "latestPricePerPack": null
         },
         "history": [
           {
@@ -57643,22 +57656,501 @@
             "recorded": false
           }
         ],
-        "month": {
-          "packsAdded": 0,
-          "spend": "0.00",
-          "latestPricePerPack": null
-        },
         "forecast": {
           "month": "2026-10",
           "effectiveDays": "26.5",
-          "packs": null,
-          "spend": null,
-          "averagePricePerPack": null,
+          "packs": "3.45",
+          "spend": "997.50",
+          "averagePricePerPack": "289.13",
           "basisMonth": "2026-09",
           "basisPacks": 0,
           "basisSpend": "0.00"
         },
-        "series": []
+        "series": [
+          {
+            "date": "2026-08-01",
+            "onHand": "0.00",
+            "projected": false
+          },
+          {
+            "date": "2026-08-02",
+            "onHand": "-0.07",
+            "projected": false
+          },
+          {
+            "date": "2026-08-03",
+            "onHand": "-0.20",
+            "projected": false
+          },
+          {
+            "date": "2026-08-04",
+            "onHand": "-0.33",
+            "projected": false
+          },
+          {
+            "date": "2026-08-05",
+            "onHand": "-0.46",
+            "projected": false
+          },
+          {
+            "date": "2026-08-06",
+            "onHand": "-0.59",
+            "projected": false
+          },
+          {
+            "date": "2026-08-07",
+            "onHand": "-0.72",
+            "projected": false
+          },
+          {
+            "date": "2026-08-08",
+            "onHand": "-0.78",
+            "projected": false
+          },
+          {
+            "date": "2026-08-09",
+            "onHand": "-0.85",
+            "projected": false
+          },
+          {
+            "date": "2026-08-10",
+            "onHand": "-0.98",
+            "projected": false
+          },
+          {
+            "date": "2026-08-11",
+            "onHand": "-1.11",
+            "projected": false
+          },
+          {
+            "date": "2026-08-12",
+            "onHand": "-1.24",
+            "projected": false
+          },
+          {
+            "date": "2026-08-13",
+            "onHand": "-1.37",
+            "projected": false
+          },
+          {
+            "date": "2026-08-14",
+            "onHand": "-1.50",
+            "projected": false
+          },
+          {
+            "date": "2026-08-15",
+            "onHand": "-1.56",
+            "projected": false
+          },
+          {
+            "date": "2026-08-16",
+            "onHand": "-1.63",
+            "projected": false
+          },
+          {
+            "date": "2026-08-17",
+            "onHand": "-1.76",
+            "projected": false
+          },
+          {
+            "date": "2026-08-18",
+            "onHand": "-1.89",
+            "projected": false
+          },
+          {
+            "date": "2026-08-19",
+            "onHand": "-2.02",
+            "projected": false
+          },
+          {
+            "date": "2026-08-20",
+            "onHand": "-2.15",
+            "projected": false
+          },
+          {
+            "date": "2026-08-21",
+            "onHand": "-2.28",
+            "projected": false
+          },
+          {
+            "date": "2026-08-22",
+            "onHand": "-2.34",
+            "projected": false
+          },
+          {
+            "date": "2026-08-23",
+            "onHand": "-2.41",
+            "projected": false
+          },
+          {
+            "date": "2026-08-24",
+            "onHand": "-2.54",
+            "projected": false
+          },
+          {
+            "date": "2026-08-25",
+            "onHand": "-2.67",
+            "projected": false
+          },
+          {
+            "date": "2026-08-26",
+            "onHand": "-2.80",
+            "projected": false
+          },
+          {
+            "date": "2026-08-27",
+            "onHand": "-2.93",
+            "projected": false
+          },
+          {
+            "date": "2026-08-28",
+            "onHand": "-3.06",
+            "projected": false
+          },
+          {
+            "date": "2026-08-29",
+            "onHand": "-3.12",
+            "projected": false
+          },
+          {
+            "date": "2026-08-30",
+            "onHand": "-3.19",
+            "projected": false
+          },
+          {
+            "date": "2026-08-31",
+            "onHand": "-3.32",
+            "projected": false
+          },
+          {
+            "date": "2026-09-01",
+            "onHand": "39.00",
+            "projected": false,
+            "marker": "count"
+          },
+          {
+            "date": "2026-09-02",
+            "onHand": "38.87",
+            "projected": false
+          },
+          {
+            "date": "2026-09-03",
+            "onHand": "38.74",
+            "projected": false
+          },
+          {
+            "date": "2026-09-04",
+            "onHand": "38.61",
+            "projected": false
+          },
+          {
+            "date": "2026-09-05",
+            "onHand": "38.55",
+            "projected": false
+          },
+          {
+            "date": "2026-09-06",
+            "onHand": "38.48",
+            "projected": false
+          },
+          {
+            "date": "2026-09-07",
+            "onHand": "38.35",
+            "projected": false
+          },
+          {
+            "date": "2026-09-08",
+            "onHand": "38.22",
+            "projected": false
+          },
+          {
+            "date": "2026-09-09",
+            "onHand": "38.09",
+            "projected": false
+          },
+          {
+            "date": "2026-09-10",
+            "onHand": "37.96",
+            "projected": false
+          },
+          {
+            "date": "2026-09-11",
+            "onHand": "37.83",
+            "projected": false
+          },
+          {
+            "date": "2026-09-12",
+            "onHand": "37.77",
+            "projected": false
+          },
+          {
+            "date": "2026-09-13",
+            "onHand": "37.70",
+            "projected": false
+          },
+          {
+            "date": "2026-09-14",
+            "onHand": "37.57",
+            "projected": false
+          },
+          {
+            "date": "2026-09-15",
+            "onHand": "37.44",
+            "projected": false
+          },
+          {
+            "date": "2026-09-16",
+            "onHand": "37.31",
+            "projected": false
+          },
+          {
+            "date": "2026-09-17",
+            "onHand": "37.18",
+            "projected": false
+          },
+          {
+            "date": "2026-09-18",
+            "onHand": "37.05",
+            "projected": false
+          },
+          {
+            "date": "2026-09-19",
+            "onHand": "37.00",
+            "projected": false,
+            "marker": "count"
+          },
+          {
+            "date": "2026-09-20",
+            "onHand": "36.94",
+            "projected": false,
+            "marker": "today"
+          },
+          {
+            "date": "2026-09-21",
+            "onHand": "36.81",
+            "projected": true
+          },
+          {
+            "date": "2026-09-22",
+            "onHand": "36.68",
+            "projected": true
+          },
+          {
+            "date": "2026-09-23",
+            "onHand": "36.55",
+            "projected": true
+          },
+          {
+            "date": "2026-09-24",
+            "onHand": "36.42",
+            "projected": true
+          },
+          {
+            "date": "2026-09-25",
+            "onHand": "36.29",
+            "projected": true
+          },
+          {
+            "date": "2026-09-26",
+            "onHand": "36.22",
+            "projected": true
+          },
+          {
+            "date": "2026-09-27",
+            "onHand": "36.16",
+            "projected": true
+          },
+          {
+            "date": "2026-09-28",
+            "onHand": "36.03",
+            "projected": true
+          },
+          {
+            "date": "2026-09-29",
+            "onHand": "35.90",
+            "projected": true
+          },
+          {
+            "date": "2026-09-30",
+            "onHand": "35.77",
+            "projected": true
+          },
+          {
+            "date": "2026-10-01",
+            "onHand": "35.64",
+            "projected": true
+          },
+          {
+            "date": "2026-10-02",
+            "onHand": "35.51",
+            "projected": true
+          },
+          {
+            "date": "2026-10-03",
+            "onHand": "35.44",
+            "projected": true
+          },
+          {
+            "date": "2026-10-04",
+            "onHand": "35.38",
+            "projected": true
+          },
+          {
+            "date": "2026-10-05",
+            "onHand": "35.25",
+            "projected": true
+          },
+          {
+            "date": "2026-10-06",
+            "onHand": "35.12",
+            "projected": true
+          },
+          {
+            "date": "2026-10-07",
+            "onHand": "34.99",
+            "projected": true
+          },
+          {
+            "date": "2026-10-08",
+            "onHand": "34.86",
+            "projected": true
+          },
+          {
+            "date": "2026-10-09",
+            "onHand": "34.73",
+            "projected": true
+          },
+          {
+            "date": "2026-10-10",
+            "onHand": "34.66",
+            "projected": true
+          },
+          {
+            "date": "2026-10-11",
+            "onHand": "34.60",
+            "projected": true
+          },
+          {
+            "date": "2026-10-12",
+            "onHand": "34.47",
+            "projected": true
+          },
+          {
+            "date": "2026-10-13",
+            "onHand": "34.34",
+            "projected": true
+          },
+          {
+            "date": "2026-10-14",
+            "onHand": "34.21",
+            "projected": true
+          },
+          {
+            "date": "2026-10-15",
+            "onHand": "34.08",
+            "projected": true
+          },
+          {
+            "date": "2026-10-16",
+            "onHand": "33.95",
+            "projected": true
+          },
+          {
+            "date": "2026-10-17",
+            "onHand": "33.88",
+            "projected": true
+          },
+          {
+            "date": "2026-10-18",
+            "onHand": "33.82",
+            "projected": true
+          },
+          {
+            "date": "2026-10-19",
+            "onHand": "33.69",
+            "projected": true
+          },
+          {
+            "date": "2026-10-20",
+            "onHand": "33.56",
+            "projected": true
+          },
+          {
+            "date": "2026-10-21",
+            "onHand": "33.43",
+            "projected": true
+          },
+          {
+            "date": "2026-10-22",
+            "onHand": "33.30",
+            "projected": true
+          },
+          {
+            "date": "2026-10-23",
+            "onHand": "33.17",
+            "projected": true
+          },
+          {
+            "date": "2026-10-24",
+            "onHand": "33.10",
+            "projected": true
+          },
+          {
+            "date": "2026-10-25",
+            "onHand": "33.04",
+            "projected": true
+          },
+          {
+            "date": "2026-10-26",
+            "onHand": "32.91",
+            "projected": true
+          },
+          {
+            "date": "2026-10-27",
+            "onHand": "32.78",
+            "projected": true
+          },
+          {
+            "date": "2026-10-28",
+            "onHand": "32.65",
+            "projected": true
+          },
+          {
+            "date": "2026-10-29",
+            "onHand": "32.52",
+            "projected": true
+          },
+          {
+            "date": "2026-10-30",
+            "onHand": "32.39",
+            "projected": true
+          },
+          {
+            "date": "2026-10-31",
+            "onHand": "32.32",
+            "projected": true
+          },
+          {
+            "date": "2026-11-01",
+            "onHand": "32.26",
+            "projected": true
+          },
+          {
+            "date": "2026-11-02",
+            "onHand": "32.13",
+            "projected": true
+          },
+          {
+            "date": "2026-11-03",
+            "onHand": "32.00",
+            "projected": true
+          },
+          {
+            "date": "2026-11-04",
+            "onHand": "31.87",
+            "projected": true
+          }
+        ]
       }
     },
     {
@@ -57684,7 +58176,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -57746,7 +58238,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -58712,7 +59204,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -58832,20 +59324,28 @@
           "reorderLevel": 5,
           "warningEffectiveDays": 10,
           "onHand": "37.00",
-          "burnRatePerEffectiveDay": "0.93",
-          "expectedDate": "2026-11-06",
-          "coverEffectiveDays": "34.4",
+          "burnRatePerEffectiveDay": "0.77",
+          "expectedDate": "2026-11-17",
+          "coverEffectiveDays": "41.6",
           "status": "on_track",
           "message": null,
           "trace": {
+            "basis": "counts",
+            "from": "2026-09-01",
+            "to": "2026-09-19",
             "months": [
               "2026-07",
               "2026-08",
               "2026-09"
             ],
-            "packs": 54,
-            "effectiveDays": "58"
+            "packs": 10,
+            "effectiveDays": "13"
           }
+        },
+        "month": {
+          "packsAdded": 20,
+          "spend": "2106.40",
+          "latestPricePerPack": "105.32"
         },
         "history": [
           {
@@ -58873,16 +59373,11 @@
             "recorded": true
           }
         ],
-        "month": {
-          "packsAdded": 20,
-          "spend": "2106.40",
-          "latestPricePerPack": "105.32"
-        },
         "forecast": {
           "month": "2026-10",
           "effectiveDays": "22",
-          "packs": "20.46",
-          "spend": "3630.42",
+          "packs": "16.94",
+          "spend": "3005.83",
           "averagePricePerPack": "177.44",
           "basisMonth": "2026-09",
           "basisPacks": 20,
@@ -58907,290 +59402,290 @@
           },
           {
             "date": "2026-07-06",
-            "onHand": "18.07",
+            "onHand": "18.23",
             "projected": false
           },
           {
             "date": "2026-07-07",
-            "onHand": "17.14",
+            "onHand": "17.46",
             "projected": false
           },
           {
             "date": "2026-07-08",
-            "onHand": "16.21",
+            "onHand": "16.69",
             "projected": false
           },
           {
             "date": "2026-07-09",
-            "onHand": "15.28",
+            "onHand": "15.92",
             "projected": false
           },
           {
             "date": "2026-07-10",
-            "onHand": "18.35",
+            "onHand": "19.15",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-07-11",
-            "onHand": "18.35",
+            "onHand": "19.15",
             "projected": false
           },
           {
             "date": "2026-07-12",
-            "onHand": "18.35",
+            "onHand": "19.15",
             "projected": false
           },
           {
             "date": "2026-07-13",
-            "onHand": "17.42",
+            "onHand": "18.38",
             "projected": false
           },
           {
             "date": "2026-07-14",
-            "onHand": "16.49",
+            "onHand": "17.61",
             "projected": false
           },
           {
             "date": "2026-07-15",
-            "onHand": "15.56",
+            "onHand": "16.84",
             "projected": false
           },
           {
             "date": "2026-07-16",
-            "onHand": "14.63",
+            "onHand": "16.07",
             "projected": false
           },
           {
             "date": "2026-07-17",
-            "onHand": "17.70",
+            "onHand": "19.30",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-07-18",
-            "onHand": "17.70",
+            "onHand": "19.30",
             "projected": false
           },
           {
             "date": "2026-07-19",
-            "onHand": "17.70",
+            "onHand": "19.30",
             "projected": false
           },
           {
             "date": "2026-07-20",
-            "onHand": "16.77",
+            "onHand": "18.53",
             "projected": false
           },
           {
             "date": "2026-07-21",
-            "onHand": "15.84",
+            "onHand": "17.76",
             "projected": false
           },
           {
             "date": "2026-07-22",
-            "onHand": "14.91",
+            "onHand": "16.99",
             "projected": false
           },
           {
             "date": "2026-07-23",
-            "onHand": "13.98",
+            "onHand": "16.22",
             "projected": false
           },
           {
             "date": "2026-07-24",
-            "onHand": "13.05",
+            "onHand": "15.45",
             "projected": false
           },
           {
             "date": "2026-07-25",
-            "onHand": "13.05",
+            "onHand": "15.45",
             "projected": false
           },
           {
             "date": "2026-07-26",
-            "onHand": "13.05",
+            "onHand": "15.45",
             "projected": false
           },
           {
             "date": "2026-07-27",
-            "onHand": "12.12",
+            "onHand": "14.68",
             "projected": false
           },
           {
             "date": "2026-07-28",
-            "onHand": "11.19",
+            "onHand": "13.91",
             "projected": false
           },
           {
             "date": "2026-07-29",
-            "onHand": "10.26",
+            "onHand": "13.14",
             "projected": false
           },
           {
             "date": "2026-07-30",
-            "onHand": "9.33",
+            "onHand": "12.37",
             "projected": false
           },
           {
             "date": "2026-07-31",
-            "onHand": "8.40",
+            "onHand": "11.60",
             "projected": false
           },
           {
             "date": "2026-08-01",
-            "onHand": "8.40",
+            "onHand": "11.60",
             "projected": false
           },
           {
             "date": "2026-08-02",
-            "onHand": "8.40",
+            "onHand": "11.60",
             "projected": false
           },
           {
             "date": "2026-08-03",
-            "onHand": "7.47",
+            "onHand": "10.83",
             "projected": false
           },
           {
             "date": "2026-08-04",
-            "onHand": "6.54",
+            "onHand": "10.06",
             "projected": false
           },
           {
             "date": "2026-08-05",
-            "onHand": "5.61",
+            "onHand": "9.29",
             "projected": false
           },
           {
             "date": "2026-08-06",
-            "onHand": "4.68",
+            "onHand": "8.52",
             "projected": false
           },
           {
             "date": "2026-08-07",
-            "onHand": "3.75",
+            "onHand": "7.75",
             "projected": false
           },
           {
             "date": "2026-08-08",
-            "onHand": "3.75",
+            "onHand": "7.75",
             "projected": false
           },
           {
             "date": "2026-08-09",
-            "onHand": "3.75",
+            "onHand": "7.75",
             "projected": false
           },
           {
             "date": "2026-08-10",
-            "onHand": "9.82",
+            "onHand": "13.98",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-11",
-            "onHand": "8.89",
+            "onHand": "13.21",
             "projected": false
           },
           {
             "date": "2026-08-12",
-            "onHand": "7.96",
+            "onHand": "12.44",
             "projected": false
           },
           {
             "date": "2026-08-13",
-            "onHand": "7.03",
+            "onHand": "11.67",
             "projected": false
           },
           {
             "date": "2026-08-14",
-            "onHand": "6.10",
+            "onHand": "10.90",
             "projected": false
           },
           {
             "date": "2026-08-15",
-            "onHand": "6.10",
+            "onHand": "10.90",
             "projected": false
           },
           {
             "date": "2026-08-16",
-            "onHand": "6.10",
+            "onHand": "10.90",
             "projected": false
           },
           {
             "date": "2026-08-17",
-            "onHand": "5.17",
+            "onHand": "10.13",
             "projected": false
           },
           {
             "date": "2026-08-18",
-            "onHand": "4.24",
+            "onHand": "9.36",
             "projected": false
           },
           {
             "date": "2026-08-19",
-            "onHand": "3.31",
+            "onHand": "8.59",
             "projected": false
           },
           {
             "date": "2026-08-20",
-            "onHand": "2.38",
+            "onHand": "7.82",
             "projected": false
           },
           {
             "date": "2026-08-21",
-            "onHand": "1.45",
+            "onHand": "7.05",
             "projected": false
           },
           {
             "date": "2026-08-22",
-            "onHand": "1.45",
+            "onHand": "7.05",
             "projected": false
           },
           {
             "date": "2026-08-23",
-            "onHand": "1.45",
+            "onHand": "7.05",
             "projected": false
           },
           {
             "date": "2026-08-24",
-            "onHand": "0.52",
+            "onHand": "6.28",
             "projected": false
           },
           {
             "date": "2026-08-25",
-            "onHand": "-0.41",
+            "onHand": "5.51",
             "projected": false
           },
           {
             "date": "2026-08-26",
-            "onHand": "-1.34",
+            "onHand": "4.74",
             "projected": false
           },
           {
             "date": "2026-08-27",
-            "onHand": "-2.27",
+            "onHand": "3.97",
             "projected": false
           },
           {
             "date": "2026-08-28",
-            "onHand": "-3.20",
+            "onHand": "3.20",
             "projected": false
           },
           {
             "date": "2026-08-29",
-            "onHand": "-3.20",
+            "onHand": "3.20",
             "projected": false
           },
           {
             "date": "2026-08-30",
-            "onHand": "-3.20",
+            "onHand": "3.20",
             "projected": false
           },
           {
             "date": "2026-08-31",
-            "onHand": "-4.13",
+            "onHand": "2.43",
             "projected": false
           },
           {
@@ -59201,88 +59696,88 @@
           },
           {
             "date": "2026-09-02",
-            "onHand": "26.07",
+            "onHand": "26.23",
             "projected": false
           },
           {
             "date": "2026-09-03",
-            "onHand": "25.14",
+            "onHand": "25.46",
             "projected": false
           },
           {
             "date": "2026-09-04",
-            "onHand": "24.21",
+            "onHand": "24.69",
             "projected": false
           },
           {
             "date": "2026-09-05",
-            "onHand": "24.21",
+            "onHand": "24.69",
             "projected": false
           },
           {
             "date": "2026-09-06",
-            "onHand": "24.21",
+            "onHand": "24.69",
             "projected": false
           },
           {
             "date": "2026-09-07",
-            "onHand": "23.28",
+            "onHand": "23.92",
             "projected": false
           },
           {
             "date": "2026-09-08",
-            "onHand": "22.35",
+            "onHand": "23.15",
             "projected": false
           },
           {
             "date": "2026-09-09",
-            "onHand": "41.42",
+            "onHand": "42.38",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-09-10",
-            "onHand": "40.49",
+            "onHand": "41.61",
             "projected": false
           },
           {
             "date": "2026-09-11",
-            "onHand": "39.56",
+            "onHand": "40.84",
             "projected": false
           },
           {
             "date": "2026-09-12",
-            "onHand": "39.56",
+            "onHand": "40.84",
             "projected": false
           },
           {
             "date": "2026-09-13",
-            "onHand": "39.56",
+            "onHand": "40.84",
             "projected": false
           },
           {
             "date": "2026-09-14",
-            "onHand": "38.63",
+            "onHand": "40.07",
             "projected": false
           },
           {
             "date": "2026-09-15",
-            "onHand": "37.70",
+            "onHand": "39.30",
             "projected": false
           },
           {
             "date": "2026-09-16",
-            "onHand": "36.77",
+            "onHand": "38.53",
             "projected": false
           },
           {
             "date": "2026-09-17",
-            "onHand": "35.84",
+            "onHand": "37.76",
             "projected": false
           },
           {
             "date": "2026-09-18",
-            "onHand": "34.91",
+            "onHand": "36.99",
             "projected": false
           },
           {
@@ -59299,227 +59794,227 @@
           },
           {
             "date": "2026-09-21",
-            "onHand": "36.07",
+            "onHand": "36.23",
             "projected": true
           },
           {
             "date": "2026-09-22",
-            "onHand": "35.14",
+            "onHand": "35.46",
             "projected": true
           },
           {
             "date": "2026-09-23",
-            "onHand": "34.21",
+            "onHand": "34.69",
             "projected": true
           },
           {
             "date": "2026-09-24",
-            "onHand": "33.28",
+            "onHand": "33.92",
             "projected": true
           },
           {
             "date": "2026-09-25",
-            "onHand": "32.35",
+            "onHand": "33.15",
             "projected": true
           },
           {
             "date": "2026-09-26",
-            "onHand": "32.35",
+            "onHand": "33.15",
             "projected": true
           },
           {
             "date": "2026-09-27",
-            "onHand": "32.35",
+            "onHand": "33.15",
             "projected": true
           },
           {
             "date": "2026-09-28",
-            "onHand": "31.42",
+            "onHand": "32.38",
             "projected": true
           },
           {
             "date": "2026-09-29",
-            "onHand": "30.49",
+            "onHand": "31.61",
             "projected": true
           },
           {
             "date": "2026-09-30",
-            "onHand": "29.56",
+            "onHand": "30.84",
             "projected": true
           },
           {
             "date": "2026-10-01",
-            "onHand": "28.63",
+            "onHand": "30.07",
             "projected": true
           },
           {
             "date": "2026-10-02",
-            "onHand": "27.70",
+            "onHand": "29.30",
             "projected": true
           },
           {
             "date": "2026-10-03",
-            "onHand": "27.70",
+            "onHand": "29.30",
             "projected": true
           },
           {
             "date": "2026-10-04",
-            "onHand": "27.70",
+            "onHand": "29.30",
             "projected": true
           },
           {
             "date": "2026-10-05",
-            "onHand": "26.77",
+            "onHand": "28.53",
             "projected": true
           },
           {
             "date": "2026-10-06",
-            "onHand": "25.84",
+            "onHand": "27.76",
             "projected": true
           },
           {
             "date": "2026-10-07",
-            "onHand": "24.91",
+            "onHand": "26.99",
             "projected": true
           },
           {
             "date": "2026-10-08",
-            "onHand": "23.98",
+            "onHand": "26.22",
             "projected": true
           },
           {
             "date": "2026-10-09",
-            "onHand": "23.05",
+            "onHand": "25.45",
             "projected": true
           },
           {
             "date": "2026-10-10",
-            "onHand": "23.05",
+            "onHand": "25.45",
             "projected": true
           },
           {
             "date": "2026-10-11",
-            "onHand": "23.05",
+            "onHand": "25.45",
             "projected": true
           },
           {
             "date": "2026-10-12",
-            "onHand": "22.12",
+            "onHand": "24.68",
             "projected": true
           },
           {
             "date": "2026-10-13",
-            "onHand": "21.19",
+            "onHand": "23.91",
             "projected": true
           },
           {
             "date": "2026-10-14",
-            "onHand": "20.26",
+            "onHand": "23.14",
             "projected": true
           },
           {
             "date": "2026-10-15",
-            "onHand": "19.33",
+            "onHand": "22.37",
             "projected": true
           },
           {
             "date": "2026-10-16",
-            "onHand": "18.40",
+            "onHand": "21.60",
             "projected": true
           },
           {
             "date": "2026-10-17",
-            "onHand": "18.40",
+            "onHand": "21.60",
             "projected": true
           },
           {
             "date": "2026-10-18",
-            "onHand": "18.40",
+            "onHand": "21.60",
             "projected": true
           },
           {
             "date": "2026-10-19",
-            "onHand": "17.47",
+            "onHand": "20.83",
             "projected": true
           },
           {
             "date": "2026-10-20",
-            "onHand": "16.54",
+            "onHand": "20.06",
             "projected": true
           },
           {
             "date": "2026-10-21",
-            "onHand": "15.61",
+            "onHand": "19.29",
             "projected": true
           },
           {
             "date": "2026-10-22",
-            "onHand": "14.68",
+            "onHand": "18.52",
             "projected": true
           },
           {
             "date": "2026-10-23",
-            "onHand": "13.75",
+            "onHand": "17.75",
             "projected": true
           },
           {
             "date": "2026-10-24",
-            "onHand": "13.75",
+            "onHand": "17.75",
             "projected": true
           },
           {
             "date": "2026-10-25",
-            "onHand": "13.75",
+            "onHand": "17.75",
             "projected": true
           },
           {
             "date": "2026-10-26",
-            "onHand": "12.82",
+            "onHand": "16.98",
             "projected": true
           },
           {
             "date": "2026-10-27",
-            "onHand": "11.89",
+            "onHand": "16.21",
             "projected": true
           },
           {
             "date": "2026-10-28",
-            "onHand": "10.96",
+            "onHand": "15.44",
             "projected": true
           },
           {
             "date": "2026-10-29",
-            "onHand": "10.03",
+            "onHand": "14.67",
             "projected": true
           },
           {
             "date": "2026-10-30",
-            "onHand": "9.10",
+            "onHand": "13.90",
             "projected": true
           },
           {
             "date": "2026-10-31",
-            "onHand": "9.10",
+            "onHand": "13.90",
             "projected": true
           },
           {
             "date": "2026-11-01",
-            "onHand": "9.10",
+            "onHand": "13.90",
             "projected": true
           },
           {
             "date": "2026-11-02",
-            "onHand": "8.17",
+            "onHand": "13.13",
             "projected": true
           },
           {
             "date": "2026-11-03",
-            "onHand": "7.24",
+            "onHand": "12.36",
             "projected": true
           },
           {
             "date": "2026-11-04",
-            "onHand": "6.31",
+            "onHand": "11.59",
             "projected": true
           }
         ]
@@ -59598,19 +60093,27 @@
           "reorderLevel": 0,
           "warningEffectiveDays": 2,
           "onHand": "5.00",
-          "burnRatePerEffectiveDay": "3.83",
-          "expectedDate": "2026-09-22",
-          "coverEffectiveDays": "1.3",
+          "burnRatePerEffectiveDay": "10.50",
+          "expectedDate": "2026-09-21",
+          "coverEffectiveDays": "0.5",
           "status": "due",
           "message": null,
           "trace": {
+            "basis": "counts",
+            "from": "2026-09-05",
+            "to": "2026-09-19",
             "months": [
               "2026-08",
               "2026-09"
             ],
-            "packs": 134,
-            "effectiveDays": "35"
+            "packs": 105,
+            "effectiveDays": "10"
           }
+        },
+        "month": {
+          "packsAdded": 75,
+          "spend": "27255.71",
+          "latestPricePerPack": "381.71"
         },
         "history": [
           {
@@ -59638,16 +60141,11 @@
             "recorded": true
           }
         ],
-        "month": {
-          "packsAdded": 75,
-          "spend": "27255.71",
-          "latestPricePerPack": "381.71"
-        },
         "forecast": {
           "month": "2026-10",
           "effectiveDays": "22",
-          "packs": "84.26",
-          "spend": "30116.21",
+          "packs": "231.00",
+          "spend": "82564.02",
           "averagePricePerPack": "357.42",
           "basisMonth": "2026-09",
           "basisPacks": 75,
@@ -59672,169 +60170,169 @@
           },
           {
             "date": "2026-08-03",
-            "onHand": "43.17",
+            "onHand": "36.50",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-04",
-            "onHand": "39.34",
+            "onHand": "26.00",
             "projected": false
           },
           {
             "date": "2026-08-05",
-            "onHand": "35.51",
+            "onHand": "15.50",
             "projected": false
           },
           {
             "date": "2026-08-06",
-            "onHand": "43.68",
+            "onHand": "17.00",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-08-07",
-            "onHand": "39.85",
+            "onHand": "6.50",
             "projected": false
           },
           {
             "date": "2026-08-08",
-            "onHand": "39.85",
+            "onHand": "6.50",
             "projected": false
           },
           {
             "date": "2026-08-09",
-            "onHand": "39.85",
+            "onHand": "6.50",
             "projected": false
           },
           {
             "date": "2026-08-10",
-            "onHand": "36.02",
+            "onHand": "-4.00",
             "projected": false
           },
           {
             "date": "2026-08-11",
-            "onHand": "32.19",
+            "onHand": "-14.50",
             "projected": false
           },
           {
             "date": "2026-08-12",
-            "onHand": "28.36",
+            "onHand": "-25.00",
             "projected": false
           },
           {
             "date": "2026-08-13",
-            "onHand": "24.53",
+            "onHand": "-35.50",
             "projected": false
           },
           {
             "date": "2026-08-14",
-            "onHand": "20.70",
+            "onHand": "-46.00",
             "projected": false
           },
           {
             "date": "2026-08-15",
-            "onHand": "20.70",
+            "onHand": "-46.00",
             "projected": false
           },
           {
             "date": "2026-08-16",
-            "onHand": "20.70",
+            "onHand": "-46.00",
             "projected": false
           },
           {
             "date": "2026-08-17",
-            "onHand": "16.87",
+            "onHand": "-56.50",
             "projected": false
           },
           {
             "date": "2026-08-18",
-            "onHand": "13.04",
+            "onHand": "-67.00",
             "projected": false
           },
           {
             "date": "2026-08-19",
-            "onHand": "9.21",
+            "onHand": "-77.50",
             "projected": false
           },
           {
             "date": "2026-08-20",
-            "onHand": "5.38",
+            "onHand": "-88.00",
             "projected": false
           },
           {
             "date": "2026-08-21",
-            "onHand": "1.55",
+            "onHand": "-98.50",
             "projected": false
           },
           {
             "date": "2026-08-22",
-            "onHand": "1.55",
+            "onHand": "-98.50",
             "projected": false
           },
           {
             "date": "2026-08-23",
-            "onHand": "1.55",
+            "onHand": "-98.50",
             "projected": false
           },
           {
             "date": "2026-08-24",
-            "onHand": "-2.28",
+            "onHand": "-109.00",
             "projected": false
           },
           {
             "date": "2026-08-25",
-            "onHand": "-6.11",
+            "onHand": "-119.50",
             "projected": false
           },
           {
             "date": "2026-08-26",
-            "onHand": "-9.94",
+            "onHand": "-130.00",
             "projected": false
           },
           {
             "date": "2026-08-27",
-            "onHand": "-13.77",
+            "onHand": "-140.50",
             "projected": false
           },
           {
             "date": "2026-08-28",
-            "onHand": "-17.60",
+            "onHand": "-151.00",
             "projected": false
           },
           {
             "date": "2026-08-29",
-            "onHand": "-17.60",
+            "onHand": "-151.00",
             "projected": false
           },
           {
             "date": "2026-08-30",
-            "onHand": "-17.60",
+            "onHand": "-151.00",
             "projected": false
           },
           {
             "date": "2026-08-31",
-            "onHand": "-21.43",
+            "onHand": "-161.50",
             "projected": false
           },
           {
             "date": "2026-09-01",
-            "onHand": "-25.26",
+            "onHand": "-172.00",
             "projected": false
           },
           {
             "date": "2026-09-02",
-            "onHand": "-29.09",
+            "onHand": "-182.50",
             "projected": false
           },
           {
             "date": "2026-09-03",
-            "onHand": "-32.92",
+            "onHand": "-193.00",
             "projected": false
           },
           {
             "date": "2026-09-04",
-            "onHand": "-36.75",
+            "onHand": "-203.50",
             "projected": false
           },
           {
@@ -59850,63 +60348,63 @@
           },
           {
             "date": "2026-09-07",
-            "onHand": "31.17",
+            "onHand": "24.50",
             "projected": false
           },
           {
             "date": "2026-09-08",
-            "onHand": "27.34",
+            "onHand": "14.00",
             "projected": false
           },
           {
             "date": "2026-09-09",
-            "onHand": "23.51",
+            "onHand": "3.50",
             "projected": false
           },
           {
             "date": "2026-09-10",
-            "onHand": "19.68",
+            "onHand": "-7.00",
             "projected": false
           },
           {
             "date": "2026-09-11",
-            "onHand": "15.85",
+            "onHand": "-17.50",
             "projected": false
           },
           {
             "date": "2026-09-12",
-            "onHand": "15.85",
+            "onHand": "-17.50",
             "projected": false
           },
           {
             "date": "2026-09-13",
-            "onHand": "41.85",
+            "onHand": "8.50",
             "projected": false,
             "marker": "purchase"
           },
           {
             "date": "2026-09-14",
-            "onHand": "38.02",
+            "onHand": "-2.00",
             "projected": false
           },
           {
             "date": "2026-09-15",
-            "onHand": "34.19",
+            "onHand": "-12.50",
             "projected": false
           },
           {
             "date": "2026-09-16",
-            "onHand": "30.36",
+            "onHand": "-23.00",
             "projected": false
           },
           {
             "date": "2026-09-17",
-            "onHand": "26.53",
+            "onHand": "-33.50",
             "projected": false
           },
           {
             "date": "2026-09-18",
-            "onHand": "71.70",
+            "onHand": "5.00",
             "projected": false,
             "marker": "purchase"
           },
@@ -59924,73 +60422,73 @@
           },
           {
             "date": "2026-09-21",
-            "onHand": "1.17",
-            "projected": true
-          },
-          {
-            "date": "2026-09-22",
-            "onHand": "-2.66",
+            "onHand": "-5.50",
             "projected": true,
             "marker": "expected"
           },
           {
+            "date": "2026-09-22",
+            "onHand": "-16.00",
+            "projected": true
+          },
+          {
             "date": "2026-09-23",
-            "onHand": "-6.49",
+            "onHand": "-26.50",
             "projected": true
           },
           {
             "date": "2026-09-24",
-            "onHand": "-10.32",
+            "onHand": "-37.00",
             "projected": true
           },
           {
             "date": "2026-09-25",
-            "onHand": "-14.15",
+            "onHand": "-47.50",
             "projected": true
           },
           {
             "date": "2026-09-26",
-            "onHand": "-14.15",
+            "onHand": "-47.50",
             "projected": true
           },
           {
             "date": "2026-09-27",
-            "onHand": "-14.15",
+            "onHand": "-47.50",
             "projected": true
           },
           {
             "date": "2026-09-28",
-            "onHand": "-17.98",
+            "onHand": "-58.00",
             "projected": true
           },
           {
             "date": "2026-09-29",
-            "onHand": "-21.81",
+            "onHand": "-68.50",
             "projected": true
           },
           {
             "date": "2026-09-30",
-            "onHand": "-25.64",
+            "onHand": "-79.00",
             "projected": true
           },
           {
             "date": "2026-10-01",
-            "onHand": "-29.47",
+            "onHand": "-89.50",
             "projected": true
           },
           {
             "date": "2026-10-02",
-            "onHand": "-33.30",
+            "onHand": "-100.00",
             "projected": true
           },
           {
             "date": "2026-10-03",
-            "onHand": "-33.30",
+            "onHand": "-100.00",
             "projected": true
           },
           {
             "date": "2026-10-04",
-            "onHand": "-33.30",
+            "onHand": "-100.00",
             "projected": true
           }
         ]
@@ -60040,7 +60538,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -61349,7 +61847,7 @@
           "expectedDate": null,
           "coverEffectiveDays": null,
           "status": "not_enough_history",
-          "message": "The forecast will be calculated once this product has at least two calendar months of purchases.",
+          "message": "The forecast starts once this product has two weeks of shelf counts.",
           "trace": null
         },
         "history": [
@@ -61451,5 +61949,8 @@
       "scope": "",
       "factual": "Coffee at Ahmedabad has 6.00 packs on hand. The burn rate is 0.86 packs per effective day. It is expected to run out on 29 September 2026."
     }
+  ],
+  "revisions": [
+    "2026-10-01: Python expectations refreshed for deliberate rule changes. Two weeks of shelf counts now give a measured rate of use (calculation cases 70, 94, 108, 114, 115); the not-enough-history and warning-window messages were reworded. Every other value is still the Node baseline."
   ]
 }

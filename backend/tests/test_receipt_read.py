@@ -313,6 +313,33 @@ async def test_save_refuses_an_unresolved_line_and_readers_cannot_write(api, db,
     assert (await api(f"/api/offices/{office}/receipt-readings/open", actor="manager")).json() == {"reading": None}
 
 
+async def test_counts_entered_while_reviewing_are_saved_with_the_purchases(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    catalog = await names(db, office)
+
+    async def ask(messages, tool_choice):
+        return submit_message({"date": "2026-09-18", "lines": [{"printed": "Amul Taaza", "productName": "Milk", "packs": 2, "pricePerPack": "30"}]})
+
+    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(receipt_read, "ask_model", ask)
+    started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
+    await settle()
+    reading_id = started.json()["readingId"]
+    line = (await api(f"/api/offices/{office}/receipt-readings/{reading_id}", actor="manager")).json()["result"]["lines"][0]
+    body = {"date": "2026-09-18", "lines": [{key: line[key] for key in ("id", "productId", "packs", "pricePerPack")}]}
+    purchases = (await db.get("SELECT count(*) AS n FROM pantry_purchase"))["n"]
+    # A bad count stops the whole approval: no purchase and no count is written.
+    refused = await api(f"/api/offices/{office}/receipt-readings/{reading_id}/save", actor="manager", method="POST", body={**body, "counts": [{"productId": catalog["Milk"], "packs": -1}]})
+    assert refused.status_code == 422
+    assert (await db.get("SELECT count(*) AS n FROM pantry_purchase"))["n"] == purchases
+    saved = await api(f"/api/offices/{office}/receipt-readings/{reading_id}/save", actor="manager", method="POST", body={**body, "counts": [{"productId": catalog["Milk"], "packs": 7}]})
+    assert saved.status_code == 200 and len(saved.json()["purchases"]) == 1
+    counted = await db.get("SELECT packs FROM pantry_count WHERE product_id = ? AND counted_on = '2026-09-20' AND deleted_at IS NULL", catalog["Milk"])
+    assert counted["packs"] == 7
+    pantry = (await api(f"/api/offices/{office}/pantry", actor="manager")).json()
+    assert next(p for p in pantry["products"] if p["productId"] == catalog["Milk"])["todayCount"] == 7
+
+
 async def test_corrupt_pdf_fails_the_job(api, offices, monkeypatch):
     monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
 

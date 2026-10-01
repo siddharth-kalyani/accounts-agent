@@ -6,7 +6,9 @@ function focusable(root) {
     .filter((node) => !node.hasAttribute("disabled") && node.getAttribute("aria-hidden") !== "true" && node.getClientRects().length > 0);
 }
 
-export function useFocusTrap(active, onEscape) {
+// `initial` optionally names the control to focus first, for a dialog whose
+// first stop is its close button but whose job is a field further down.
+export function useFocusTrap(active, onEscape, initial) {
   const ref = useRef(null);
   const escapeRef = useRef(onEscape);
   escapeRef.current = onEscape;
@@ -17,7 +19,8 @@ export function useFocusTrap(active, onEscape) {
     if (!root) return undefined;
     const previous = document.activeElement;
     const items = focusable(root);
-    (items[0] instanceof HTMLElement ? items[0] : root).focus();
+    const first = initial?.current && root.contains(initial.current) ? initial.current : items[0];
+    (first instanceof HTMLElement ? first : root).focus();
 
     function onKey(event) {
       if (event.key === "Escape") {

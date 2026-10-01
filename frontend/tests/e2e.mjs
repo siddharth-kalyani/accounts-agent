@@ -44,7 +44,7 @@ try {
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator(".load-failed")).toHaveCount(0);
   await pickOffice("Ahmedabad");
-  await expect(page.getByText("Edit Coffee", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Coffee", exact: true })).toBeVisible();
   await page.locator(".side").getByRole("button", { name: "Activity", exact: true }).click();
   await expect(page.getByText("Activity could not be loaded.")).toBeVisible();
   await expect(page.locator(".skeleton")).toHaveCount(0);
@@ -52,19 +52,43 @@ try {
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator(".activity-date").first()).toBeVisible();
   await page.locator(".side").getByRole("button", { name: "Stock", exact: true }).click();
-  await page.getByText("Edit Coffee", { exact: true }).click();
-  const editor = page.locator(".product-editor[open]");
+  // The edit icon opens a dialog: today's count first, then warning days, then the name.
+  // There is no reorder level any more; Due comes from the warning days alone.
+  await page.getByRole("button", { name: "Edit Coffee", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit Coffee" });
+  await expect(editor.getByLabel("On hand today (packs)")).toBeFocused();
+  assert.equal(await editor.getByLabel(/reorder/i).count(), 0);
+  await editor.getByLabel("On hand today (packs)").fill("6");
   await editor.getByLabel("Product name", { exact: true }).fill("Coffee beans");
-  await editor.getByLabel("Reorder level (packs)").fill("2");
-  await editor.getByLabel("Warn this many working days ahead").fill("7");
-  await editor.getByRole("button", { name: "Save product" }).click();
+  await editor.getByLabel("Warn this many working days before it runs out").fill("7");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Coffee beans", exact: true })).toBeVisible();
+  const coffeeRow = page.locator("article.product").filter({ has: page.getByRole("heading", { name: "Coffee beans", exact: true }) });
+  await expect(coffeeRow).toContainText("Counted today");
+  await expect(coffeeRow).not.toContainText("Entered by");
+  // Today's stock counts several shelves at once; a blank row is skipped.
+  const counted = page.locator(".card-head .lede-small");
+  const before = Number((await counted.innerText()).split(" ")[0]);
+  await page.getByRole("button", { name: "Today's stock", exact: true }).click();
+  const today = page.getByRole("dialog", { name: "Today's stock" });
+  await today.getByLabel("Milk", { exact: true }).fill("-1");
+  await today.getByRole("button", { name: "Save 1 count", exact: true }).click();
+  await expect(today.getByRole("alert")).toHaveText("Enter whole packs, zero or more.");
+  await today.getByLabel("Milk", { exact: true }).fill("4");
+  await today.getByRole("button", { name: "Save 1 count", exact: true }).click();
+  await expect(today).toHaveCount(0);
+  await expect(counted).toHaveText(new RegExp(`^${before + 1} of \\d+ counted today$`));
   assert.equal(await page.getByRole("button", { name: /hide|restore/i }).count(), 0);
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(page.getByRole("button", { name: "Receipt", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Settings lives only under Super Admin, not as a Record tab.
+  assert.equal(await page.locator(".record-card").getByRole("button", { name: "Settings", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Purchase", exact: true }).click();
   await page.locator(".record-form select").selectOption({ label: "Coffee beans" });
   await page.getByLabel("Packs", { exact: true }).fill("3");
+  // Counted today already holds a purchase dated today, so the box stays at today's count.
+  await expect(page.getByLabel("On hand now (packs)")).toHaveValue("6");
   await page.getByLabel("Price per pack (INR)").fill("25.50");
   // The Purchase tab needs a receipt; nothing is sent without one.
   let purchasePosts = 0;
@@ -236,10 +260,16 @@ try {
   const returning = await browser.newContext({ storageState: persisted, viewport: { width: 390, height: 844 } });
   const mobile = await returning.newPage(); await mobile.goto(app.base);
   await expect(mobile.getByRole("heading", { name: "Coffee beans", exact: true })).toBeVisible();
-  await mobile.getByText("Edit Coffee beans", { exact: true }).click();
-  await expect(mobile.locator(".product-editor[open]").getByLabel("Product name", { exact: true })).toBeVisible();
+  await mobile.getByRole("button", { name: "Edit Coffee beans", exact: true }).click();
+  const mobileEditor = mobile.getByRole("dialog", { name: "Edit Coffee beans" });
+  await expect(mobileEditor.getByLabel("Product name", { exact: true })).toBeVisible();
   await mobile.screenshot({ path: path.join(os.tmpdir(), "pantry-mobile-review.png"), fullPage: true });
   assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.ok(await mobileEditor.evaluate((dialog) => dialog.getBoundingClientRect().right <= innerWidth));
+  // Escape closes the dialog and focus goes back to its edit button.
+  await mobile.keyboard.press("Escape");
+  await expect(mobileEditor).toHaveCount(0);
+  await expect(mobile.getByRole("button", { name: "Edit Coffee beans", exact: true })).toBeFocused();
   // The phone menu closes with Escape and with its own close button, and keeps focus inside while open.
   await mobile.getByRole("button", { name: "Open menu" }).click();
   await expect(mobile.locator(".side.open")).toHaveCount(1);

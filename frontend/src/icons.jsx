@@ -223,6 +223,15 @@ export function IconCount({ size = 20 }) {
   );
 }
 
+export function IconEdit({ size = 18 }) {
+  return (
+    <Svg size={size}>
+      <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" />
+      <path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8l-3.8.9.9-3.8Z" />
+    </Svg>
+  );
+}
+
 export function IconCalendar() {
   return (
     <Svg size={16}>

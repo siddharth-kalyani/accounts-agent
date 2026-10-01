@@ -6,7 +6,11 @@ from zoneinfo import ZoneInfo
 from .compat import fixed, js_round, text
 
 INDIA = ZoneInfo("Asia/Kolkata")
-NOT_ENOUGH = "The forecast will be calculated once this product has at least two calendar months of purchases."
+NOT_ENOUGH = "The forecast starts once this product has two weeks of shelf counts."
+STOCK_ROSE = "Stock went up more than the recorded purchases. Record any missing purchase and the forecast will start."
+NONE_USED = "None of this product was used between the shelf counts, so there is no run-out date yet."
+# Shelf counts at least this many calendar days apart give a measured rate of use.
+COUNT_DAYS_NEEDED = 14
 
 
 def today_in_india(now=None):
@@ -129,6 +133,38 @@ def project_run_out(*, today, onHand, burn, reorderLevel, weekendWeight, closedW
     return {"expectedDate": expected, "coverEffectiveDays": fixed(cover, 1)}
 
 
+def window_start(settings, today):
+    return lookback_months(today[:7], settings["lookbackMonths"])[0] + "-01"
+
+
+def counted_use(purchases, counts, settings, today):
+    """Packs actually used between shelf counts in the lookback window.
+
+    Only counts a person entered are used; the automatic zero count a product
+    starts with is a guess, not a count. A count already includes purchases
+    dated that day, so the packs used from the first count to the latest one are
+    the first count, plus purchases after it up to the latest count, minus the
+    latest count. Counts in between cancel out, so a miscount or a purchase
+    dated a day early or late in the middle does not skew the rate.
+    """
+    start = window_start(settings, today)
+    hand = sorted((r for r in counts if not r.get("deletedAt") and not r.get("automatic") and start <= r["countedOn"] <= today), key=lambda r: r["countedOn"])
+    if not hand:
+        return None
+    first, last = hand[0], hand[-1]
+    span = (date.fromisoformat(last["countedOn"]) - date.fromisoformat(first["countedOn"])).days
+    bought = sum(r["packs"] for r in purchases if not r.get("deletedAt") and first["countedOn"] < r["purchasedOn"] <= last["countedOn"])
+    return {"from": first["countedOn"], "to": last["countedOn"], "days": span,
+            "packs": first["packs"] + bought - last["packs"],
+            "effectiveDays": effective_days(add_days(first["countedOn"], 1), last["countedOn"], settings["weekendWeight"])}
+
+
+def counted_days(counts, settings, today):
+    """Calendar days covered by hand counts in the lookback window, for the "starts in N days" hint."""
+    used = counted_use([], counts, settings, today)
+    return used["days"] if used else 0
+
+
 def compute_product(*, product, purchases, counts, settings, today):
     active, anchor, shelf = shelf_state(purchases, counts, today)
     consumption = [r for r in active if r["purchasedOn"] <= anchor["countedOn"]] if anchor else active
@@ -141,6 +177,18 @@ def compute_product(*, product, purchases, counts, settings, today):
             recorded.append({"month": month, "packs": sum(r["packs"] for r in rows), "effectiveDays": effective_days(bounds["start"], end, settings["weekendWeight"])})
     base = {"reorderLevel": product["reorderLevel"], "warningEffectiveDays": product["warningEffectiveDays"]}
     empty = {**base, "onHand": fixed(shelf), "burnRatePerEffectiveDay": None, "expectedDate": None, "coverEffectiveDays": None, "status": "not_enough_history", "message": NOT_ENOUGH, "trace": None}
+    # Two weeks of shelf counts measure use directly, so they come first. The
+    # latest count is always the last one used, so it is also the on-hand anchor.
+    measured = counted_use(active, counts, settings, today)
+    if measured and measured["days"] >= COUNT_DAYS_NEEDED and measured["to"] == (anchor or {}).get("countedOn"):
+        if measured["packs"] > 0 and measured["effectiveDays"] > 0:
+            burn = round_half_up(measured["packs"] / measured["effectiveDays"], 2)
+            trace = {"basis": "counts", "from": measured["from"], "to": measured["to"], "months": [m["month"] for m in recorded], "packs": measured["packs"], "effectiveDays": text(round4(measured["effectiveDays"]))}
+            if burn:
+                return run_out(base, product, active, anchor, shelf, burn, trace, settings, today)
+        if len(recorded) < 2:
+            return {**empty, "message": STOCK_ROSE if measured["packs"] < 0 else NONE_USED}
+    # Without two weeks of counts, purchases over two calendar months stand in for use.
     if len(recorded) < 2:
         return empty
     packs = sum(m["packs"] for m in recorded)
@@ -149,6 +197,10 @@ def compute_product(*, product, purchases, counts, settings, today):
     trace = {"months": [m["month"] for m in recorded], "packs": packs, "effectiveDays": text(days)}
     if not burn:
         return {**empty, "trace": trace}
+    return run_out(base, product, active, anchor, shelf, burn, trace, settings, today)
+
+
+def run_out(base, product, active, anchor, shelf, burn, trace, settings, today):
     later = [r for r in active if r["purchasedOn"] > anchor["countedOn"]] if anchor else []
     on_hand = walk_on_hand(anchor["packs"], add_days(anchor["countedOn"], 1), today, later, burn, settings["weekendWeight"]) if anchor else round4(shelf - burn * effective_days(today, today, settings["weekendWeight"]))
     shown = round_half_up(on_hand, 2)
@@ -193,8 +245,12 @@ def project_month(*, purchases, math, settings, today, basisPacks, basisSpend):
     if not math["burnRatePerEffectiveDay"] or not math["trace"]:
         return result
     months = set(math["trace"]["months"])
-    rows = [r for r in purchases if not r.get("deletedAt") and r["purchasedOn"] <= today and r["purchasedOn"][:7] in months]
-    average = weighted_average(rows)
+    bought = [r for r in purchases if not r.get("deletedAt") and r["purchasedOn"] <= today]
+    average = weighted_average([r for r in bought if r["purchasedOn"][:7] in months])
+    if average is None and bought:
+        # A rate from shelf counts can come from stock bought before the lookback
+        # months; the latest price paid is then the best guide.
+        average = fixed(js_round(float(max(bought, key=lambda r: (r["purchasedOn"], r.get("createdAt") or ""))["pricePerPack"]) * 100) / 100)
     packs = round_half_up(float(math["burnRatePerEffectiveDay"]) * float(frame["effectiveDays"]), 2)
     return {**result, "packs": fixed(packs), "averagePricePerPack": average, "spend": scale_money(packs, average) if average is not None else None}
 
@@ -213,9 +269,12 @@ def stock_series(*, purchases, counts, settings, today, burnRate, expectedDate, 
     bought_on = packs_by_date([r for r in active if r["purchasedOn"] not in count_packs and (not anchor_date or r["purchasedOn"] < anchor_date)])
     bought_after = packs_by_date([r for r in active if anchor_date and r["purchasedOn"] > anchor_date])
     points = []
-    if anchor_date and bought_on:
-        window_start = lookback_months(today[:7], settings["lookbackMonths"])[0] + "-01"
-        start = max(add_days(min(bought_on), -1), window_start)
+    window_start = lookback_months(today[:7], settings["lookbackMonths"])[0] + "-01"
+    # Counted most days, purchases fall on count days and are inside those counts,
+    # so the line before the latest count is drawn from the counts themselves.
+    earlier = sorted(r["countedOn"] for r in active_counts if not r.get("automatic") and anchor_date and window_start <= r["countedOn"] < anchor_date)
+    if anchor_date and (bought_on or earlier):
+        start = max(add_days(min(bought_on), -1), window_start) if bought_on else earlier[0]
         opening = max((r for r in active_counts if r["countedOn"] <= start and r["packs"] > 0), key=lambda r: r["countedOn"], default=None)
         qty = opening["packs"] if opening else 0
         for day in each_date(start, add_days(anchor_date, -1)):

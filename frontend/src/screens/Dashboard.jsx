@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, indiaDate, indiaDay, indiaTime, monthLabel, packs, ranOutOn, rupee, runsOutWhen, setCsrf, statusLabel, stockState, weeklyUse } from "../api.js";
+import { api, countNote, FORECAST_COUNT_DAYS, forecastWait, indiaDate, indiaDay, indiaTime, monthLabel, packs, ranOutOn, rupee, runsOutWhen, setCsrf, statusLabel, stockState, weeklyUse } from "../api.js";
 import { useFocusTrap } from "../focus.js";
 import { Logo } from "../App.jsx";
 import { AccessPanel } from "../components/AccessPanel.jsx";
@@ -11,7 +11,8 @@ import { RecordPanel } from "../components/RecordPanel.jsx";
 import { ProductEditor } from "../components/ProductEditor.jsx";
 import { Purchases } from "../components/Purchases.jsx";
 import { SettingsPanel } from "../components/SettingsPanel.jsx";
-import { EmptyState } from "../components/Illustration.jsx";
+import { TodayStock } from "../components/TodayStock.jsx";
+import { EmptyState, Pending } from "../components/Illustration.jsx";
 import { LoadFailed, Skeleton } from "../components/Skeleton.jsx";
 import { ToastStack } from "../components/Toasts.jsx";
 import {
@@ -178,6 +179,8 @@ export function Dashboard({ theme, onSignOut }) {
   const [activityFailed, setActivityFailed] = useState(false);
   const [activityReload, setActivityReload] = useState(0);
   const [recordKind, setRecordKind] = useState("receipt");
+  // Today's stock dialog on Stock.
+  const [counting, setCounting] = useState(false);
   const officeRequest = useRef(0);
   const purchaseRequest = useRef(null);
   // Removals waiting behind an Undo toast: id -> { commit, revert }.
@@ -422,6 +425,7 @@ export function Dashboard({ theme, onSignOut }) {
     if (group?.day === day) group.items.push(item);
     else activityDays.push({ day, items: [item] });
   }
+  const countedToday = products.filter((product) => product.todayCount != null).length;
   const outOfStock = products.filter((product) => stockState(product) === "out");
   const due = products.filter((product) => stockState(product) === "due");
   const learning = products.length > 0 && products.every((product) => product.status === "not_enough_history");
@@ -507,6 +511,7 @@ export function Dashboard({ theme, onSignOut }) {
             date: form.date,
             packs: Number(form.packs),
             pricePerPack: form.price,
+            ...(form.onHand != null ? { onHand: form.onHand } : {}),
             receipt,
           },
         });
@@ -520,7 +525,7 @@ export function Dashboard({ theme, onSignOut }) {
           return { purchaseId: saved.purchaseId };
         }
         purchaseRequest.current = null;
-        toast = "Purchase saved.";
+        toast = form.onHand != null ? "Purchase and today's stock saved." : "Purchase saved.";
       } else if (form.kind === "count") {
         await api(`/api/offices/${officeId}/counts`, {
           method: "PUT",
@@ -790,7 +795,7 @@ export function Dashboard({ theme, onSignOut }) {
                 <p className="hero-explain" title={forecastDays ? `${forecastDays} working days, with weekends counted at the company weekend weight` : undefined}>
                   {forecastSpend && forecastMonth
                     ? `Estimate for ${monthLabel(forecastMonth)} if use continues at the current rate.`
-                    : "Shown once two months of purchases are on record."}
+                    : "Shown after two weeks of shelf counts."}
                 </p>
               </div>
               <div className="hero-side">
@@ -817,7 +822,6 @@ export function Dashboard({ theme, onSignOut }) {
               pantry={pantry}
               officeId={officeId}
               officeName={selectedOffice?.name || pantry?.officeName}
-              superAdmin={Boolean(me?.superAdmin)}
               busy={busy}
               loading={!pantry}
               initialKind={recordKind}
@@ -831,8 +835,18 @@ export function Dashboard({ theme, onSignOut }) {
         {offices.length > 0 && view === "stock" ? (
           <section className="card" style={{ marginTop: 18 }}>
             <div className="card-head">
-              <h2>{allOffices ? "Offices" : pantry?.officeName || officeName}</h2>
+              <div>
+                <h2>{allOffices ? "Offices" : pantry?.officeName || officeName}</h2>
+                {!allOffices && pantry && products.length ? (
+                  <p className="lede-small">{countedToday} of {products.length} counted today</p>
+                ) : null}
+              </div>
               <div className="row-actions">
+                {!allOffices && pantry?.canWrite && products.length ? (
+                  <button className="solid with-icon" type="button" onClick={() => setCounting(true)}>
+                    <IconCount size={18} /> Today&apos;s stock
+                  </button>
+                ) : null}
                 <input
                   className="search"
                   type="text"
@@ -876,55 +890,51 @@ export function Dashboard({ theme, onSignOut }) {
                     title={`Start tracking ${pantry.officeName}`}
                     actions={pantry.canWrite ? (
                       <>
-                        <button className="solid small" type="button" onClick={() => openRecord("purchase")}>Record a purchase</button>
+                        <button className="solid small" type="button" onClick={() => setCounting(true)}>Count today&apos;s stock</button>
                         <button className="ghost small" type="button" onClick={() => openRecord("receipt")}>Read a receipt</button>
                       </>
                     ) : null}
                   >
-                    Record purchases as they arrive. Run-out dates and next month&apos;s estimate appear once two calendar months of purchases are on record.
+                    Count each shelf once a day and record purchases as they arrive. Run-out dates and next month&apos;s estimate start after two weeks of counts.
                   </EmptyState>
                 ) : null}
                 <div className="products">
                   {stockList.length ? stockList.map((product) => {
                     const state = stockState(product);
                     const since = state === "out" ? ranOutOn(product) : null;
-                    const reorder = Number(product.reorderLevel) || 0;
                     const use = weeklyUse(product, pantry.settings);
                     return (
                       <article className={`product${state === "out" ? " is-out" : ""}`} key={product.productId}>
-                        <div>
+                        <div className="product-name">
                           <h3>{product.name}</h3>
-                          <span className="muted">Entered by {product.createdBy} · {product.createdAtLabel}</span>
                         </div>
-                        <p className="stat"><small className="muted">On hand today</small>{state === "out" ? "None left" : packs(product.onHand)}</p>
+                        <p className="stat">
+                          <small className="muted">On hand today</small>{state === "out" ? "None left" : packs(product.onHand)}
+                          <small className={`muted count-note${product.todayCount != null ? " is-counted" : ""}`}>{countNote(product)}</small>
+                        </p>
                         <p className="stat stat-key">
                           <small className="muted">Runs out</small>
-                          {state === "out" ? "Already out" : product.expectedDate ? indiaDate(product.expectedDate) : "—"}
+                          {state === "out" ? "Already out" : product.expectedDate ? indiaDate(product.expectedDate) : <Pending label="No run-out date yet" title={forecastWait(product)} />}
                           <small className="muted">
                             {state === "out"
                               ? since ? `Since about ${indiaDate(since)}` : "Record a count or a purchase"
-                              : product.expectedDate ? runsOutWhen(product, pantry.today) : "After two months of purchases"}
+                              : product.expectedDate ? runsOutWhen(product, pantry.today) : forecastWait(product)}
                           </small>
                         </p>
                         <p className="stat" title={product.burnRatePerEffectiveDay ? `${product.burnRatePerEffectiveDay} packs per working day` : undefined}>
-                          <small className="muted">Uses</small>{use || "—"}
+                          <small className="muted">Usage</small>{use || <Pending label="Usage not known yet" title={forecastWait(product)} />}
                         </p>
                         <p className="stat"><small className="muted">Added in {monthName}</small>{packs(product.packsAdded)}</p>
                         <p className="stat">
                           <small className="muted">Spent in {monthName}</small>{rupee(product.spend)}
                           <small className="muted">{product.latestPricePerPack ? `Latest ${rupee(product.latestPricePerPack)}` : "No price this month"}</small>
                         </p>
-                        <span className={`pill ${state}`}>{statusLabel(state)}</span>
-                        {reorder > 0 ? <small className="muted reorder-note">Reorder at {packs(reorder)}</small> : null}
-                        {product.message && !learning ? <p className="note">{product.message}</p> : null}
-                        {pantry.canWrite ? (
-                          <ProductEditor
-                            key={`${product.productId}-${product.name}-${product.reorderLevel}-${product.warningEffectiveDays}`}
-                            product={product}
-                            onSaved={refresh}
-                            onToast={pushToast}
-                          />
-                        ) : null}
+                        <div className="product-end">
+                          <span className={`pill ${state}`}>{statusLabel(state)}</span>
+                          {pantry.canWrite ? <ProductEditor product={product} onSaved={refresh} onToast={pushToast} /> : null}
+                        </div>
+                        {/* While counts build up, Runs out already says how long; other messages explain a problem. */}
+                        {product.message && !learning && Number(product.countedDays) >= FORECAST_COUNT_DAYS ? <p className="note">{product.message}</p> : null}
                       </article>
                     );
                   }) : stockQuery.trim() ? (
@@ -1038,6 +1048,17 @@ export function Dashboard({ theme, onSignOut }) {
         ) : null}
       </main>
 
+      {counting && pantry && !allOffices ? (
+        <TodayStock
+          officeId={officeId}
+          officeName={pantry.officeName}
+          today={pantry.today}
+          products={products}
+          onClose={() => setCounting(false)}
+          onSaved={refresh}
+          onToast={pushToast}
+        />
+      ) : null}
       <ToastStack toasts={toasts} onDismiss={dismissToast} onUndo={undoToast} />
       <ChatDock
         configured={health?.chatConfigured}

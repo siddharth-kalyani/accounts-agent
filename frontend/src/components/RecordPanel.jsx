@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { api, indiaDate, rupee } from "../api.js";
+import { useEffect, useId, useRef, useState } from "react";
+import { api, indiaDate, onHandAfter, packs, rupee, wholePacks } from "../api.js";
 import { useMounted } from "../hooks.js";
 import { IconFile } from "../icons.jsx";
 import { DateField } from "./DateField.jsx";
 import { ProductMenu } from "./ProductMenu.jsx";
-import { SettingsPanel } from "./SettingsPanel.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 
-const empty = { kind: "receipt", name: "", productId: "", date: "", packs: "", price: "" };
-const KINDS = ["receipt", "purchase", "product", "settings"];
+// `onHand` is today's shelf count typed with a purchase; it is only sent once
+// someone changes it (`onHandTouched`), so an expected figure is never saved as a count.
+const empty = { kind: "receipt", name: "", productId: "", date: "", packs: "", price: "", onHand: "", onHandTouched: false };
+const KINDS = ["receipt", "purchase", "product"];
+const ON_HAND_ERROR = "On hand is a whole number of packs, zero or more.";
 
-export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit, onSaved, onToast, busy, loading, initialKind = "receipt" }) {
+export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, onToast, busy, loading, initialKind = "receipt" }) {
   const purchaseFileRef = useRef(null);
   const receiptFileRef = useRef(null);
   const readingRef = useRef(null);
@@ -33,6 +35,10 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
   const [readBusy, setReadBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reading, setReading] = useState(null);
+  // Receipt review: today's shelf count typed per product, keyed by product id.
+  const [shelf, setShelf] = useState({});
+  const [onHandError, setOnHandError] = useState("");
+  const hintId = useId();
   const canWrite = Boolean(pantry?.canWrite);
 
   useEffect(() => {
@@ -161,7 +167,9 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
     const last = product?.latestPricePerPack ? String(product.latestPricePerPack) : "";
     const untouched = !form.price || form.price === prefilledPrice.current;
     if (untouched) prefilledPrice.current = last;
-    setForm({ ...form, productId, price: untouched ? last : form.price });
+    // A count typed for one product must not carry over to another.
+    setForm({ ...form, productId, price: untouched ? last : form.price, onHand: "", onHandTouched: false });
+    setOnHandError("");
   }
 
   async function submit(event) {
@@ -174,6 +182,12 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       purchaseFileRef.current?.closest(".field")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
     }
+    const counted = form.kind === "purchase" && form.onHandTouched && String(form.onHand).trim() !== "";
+    if (counted && wholePacks(form.onHand) == null) {
+      setOnHandError(ON_HAND_ERROR);
+      return;
+    }
+    setOnHandError("");
     if (heldPurchase && form.kind === "purchase" && samePurchase(form, heldPurchase) && receipt) {
       const ok = await onSubmit({ ...form, kind: "attach", purchaseId: heldPurchase.purchaseId }, receipt);
       if (ok === true) {
@@ -184,11 +198,12 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       return;
     }
     if (heldPurchase && !samePurchase(form, heldPurchase)) setHeldPurchase(null);
-    const result = await onSubmit(form, form.kind === "purchase" ? receipt : null);
+    const sent = { ...form, onHand: counted ? wholePacks(form.onHand) : null };
+    const result = await onSubmit(sent, form.kind === "purchase" ? receipt : null);
     if (result === true) {
       if (form.kind === "purchase") {
         const product = (pantry?.products || []).find((item) => item.productId === form.productId);
-        setLastSaved({ name: product?.name || "the product", packs: form.packs, price: form.price, date: form.date, hadReceipt: Boolean(receipt) });
+        setLastSaved({ name: product?.name || "the product", packs: form.packs, price: form.price, date: form.date, hadReceipt: Boolean(receipt), onHand: sent.onHand });
       }
       clearPurchaseFile();
       setHeldPurchase(null);
@@ -287,6 +302,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       revision.current += 1;
       readingRef.current = null;
       setReading(null);
+      setShelf({});
       clearUpload();
     } catch (err) {
       setReadError(err.message);
@@ -328,6 +344,13 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
       setSaving(false);
       return;
     }
+    const kept = new Set(lines.map((line) => line.productId));
+    const counts = Object.entries(shelf).filter(([productId, value]) => kept.has(productId) && String(value).trim() !== "");
+    if (counts.some(([, value]) => wholePacks(value) == null)) {
+      setReadError(ON_HAND_ERROR);
+      setSaving(false);
+      return;
+    }
     try {
       const saved = await api(`/api/offices/${officeId}/receipt-readings/${latest.readingId}/save`, {
         method: "POST",
@@ -339,12 +362,14 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
             packs: line.packs,
             pricePerPack: line.pricePerPack,
           })),
+          ...(counts.length ? { counts: counts.map(([productId, value]) => ({ productId, packs: wholePacks(value) })) } : {}),
         },
       });
-      onToast?.("Purchases added.");
+      onToast?.(counts.length ? "Purchases and today's stock added." : "Purchases added.");
       const receiptError = saved.purchases?.find((purchase) => purchase.receiptError)?.receiptError;
       readingRef.current = null;
       setReading(null);
+      setShelf({});
       clearUpload();
       if (receiptError) setReadError(receiptError);
       await onSaved?.();
@@ -378,18 +403,25 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
     ["receipt", "Receipt"],
     ["purchase", "Purchase"],
     ["product", "Product"],
-    superAdmin ? ["settings", "Settings"] : null,
-  ].filter(Boolean);
+  ];
   const lede = form.kind === "receipt"
     ? "One receipt can add several purchases. Nothing is saved until you approve it."
     : form.kind === "product"
       ? `Adds a product at ${officeName || "this office"}.`
-      : form.kind === "settings"
-        ? "Weekend weight and lookback apply to every office."
-        : `${officeName}. Attach the receipt for each purchase.`;
+      : `${officeName}. Attach the receipt for each purchase.`;
   const visibleLines = (reading?.result?.lines || []).filter((line) => !line.discarded);
   const alert = readError || (reading?.status === "failed" ? reading.error : "");
   const showUpload = !reading || reading.status === "failed";
+  // One on-hand box per product on a receipt, on its first line, counting every line of it.
+  const firstLine = {};
+  const addedBy = {};
+  for (const line of visibleLines) {
+    if (!line.productId) continue;
+    firstLine[line.productId] ??= line.id;
+    addedBy[line.productId] = (addedBy[line.productId] || 0) + (Number(line.packs) || 0);
+  }
+  const chosen = products.find((product) => product.productId === form.productId);
+  const onHandValue = form.onHandTouched ? form.onHand : chosen ? String(onHandAfter(chosen, form.date, form.packs)) : "";
 
   return (
     <section className="card record-card">
@@ -461,6 +493,25 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
                         <input inputMode="decimal" value={line.pricePerPack} onChange={(event) => changeLine(line.id, { pricePerPack: event.target.value }, false)} />
                       </label>
                     </div>
+                    {line.productId && firstLine[line.productId] === line.id ? (
+                      <div className="fields">
+                        <label className="field">On hand now (packs)
+                          <input
+                            inputMode="numeric"
+                            autoComplete="off"
+                            aria-describedby={`${hintId}-line-${line.id}`}
+                            value={shelf[line.productId] ?? String(onHandAfter(products.find((item) => item.productId === line.productId), reading.result.date, addedBy[line.productId]))}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setShelf((current) => ({ ...current, [line.productId]: value }));
+                            }}
+                          />
+                        </label>
+                        <p className="field-hint on-hand-hint" id={`${hintId}-line-${line.id}`}>
+                          {shelfHint(products.find((item) => item.productId === line.productId), shelf[line.productId] !== undefined)}
+                        </p>
+                      </div>
+                    ) : line.productId ? <p className="note">On hand for {line.productName || "this product"} is on its first line.</p> : null}
                   </article>
                 )) : <p className="note">No lines left on this receipt.</p>}
               </div>
@@ -512,6 +563,7 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
               <p>
                 <strong>Saved.</strong> {lastSaved.packs} {Number(lastSaved.packs) === 1 ? "pack" : "packs"} of {lastSaved.name} at {rupee(lastSaved.price)} on {indiaDate(lastSaved.date)}
                 {lastSaved.hadReceipt ? ", with its receipt." : "."}
+                {lastSaved.onHand != null ? ` On hand now ${packs(lastSaved.onHand)}.` : ""}
               </p>
               <p className="note">Add the next one below. The date stays the same.</p>
             </div>
@@ -581,6 +633,26 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
             {form.kind === "purchase" && prefilledPrice.current && prefilledPrice.current === form.price ? (
               <p className="note field wide">Filled in from the last price this month. Change it if the receipt differs.</p>
             ) : null}
+            {form.kind === "purchase" ? (
+              <label className="field">On hand now (packs)
+                <input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={onHandValue}
+                  disabled={!chosen}
+                  aria-describedby={`${hintId}-onhand`}
+                  aria-invalid={Boolean(onHandError) || undefined}
+                  onChange={(event) => {
+                    setOnHandError("");
+                    setForm({ ...form, onHand: event.target.value, onHandTouched: true });
+                  }}
+                />
+              </label>
+            ) : null}
+            {form.kind === "purchase" ? (
+              <p className="field-hint on-hand-hint" id={`${hintId}-onhand`}>{shelfHint(chosen, form.onHandTouched)}</p>
+            ) : null}
+            {form.kind === "purchase" && onHandError ? <p className="error field wide" role="alert">{onHandError}</p> : null}
             <div className="field wide">
               <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : heldPurchase ? "Try the receipt again" : "Save"}</button>
             </div>
@@ -588,11 +660,17 @@ export function RecordPanel({ pantry, officeId, officeName, superAdmin, onSubmit
         </form>
       ) : null}
 
-      {form.kind === "settings" ? (
-        <SettingsPanel embedded settings={pantry.settings} officeId={officeId} officeName={officeName} onSaved={onSaved} onToast={onToast} />
-      ) : null}
     </section>
   );
+}
+
+// What the on-hand box means. It is prefilled with what the pantry expects once
+// this purchase is saved; a changed figure is saved as today's count.
+function shelfHint(product, touched) {
+  if (!product) return "Choose a product to see what should be on the shelf.";
+  if (touched) return "Saves as today's count with this purchase.";
+  if (product.todayCount != null) return `Today's count is ${packs(product.todayCount)}. Add this purchase if it came in after that count.`;
+  return "Expected on the shelf with this purchase put away. Change it if your count differs.";
 }
 
 function patchBody(next) {

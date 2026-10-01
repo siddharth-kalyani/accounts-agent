@@ -251,6 +251,12 @@ async def count(request: Request, office_id: str):
     return await i.upsert_count(db, actor, office_id, body)
 
 
+@router.put("/api/offices/{office_id}/counts/today")
+async def today_counts(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await i.save_today_counts(db, actor, office_id, body)
+
+
 @router.post("/api/counts/{count_id}/hide")
 async def hide_count(request: Request, count_id: str):
     db, actor, _ = context(request)
