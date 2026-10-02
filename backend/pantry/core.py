@@ -1,4 +1,5 @@
 """Shared persistence, live authorization, schema and attribution."""
+import asyncio
 import os
 import re
 import uuid
@@ -7,9 +8,10 @@ from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 from .compat import text
-from .config import UUID, production
+from .config import UUID, INVITE_SECONDS, production, entra_requested
 from .database import Database
 from .identity import intuitive_sign_in_name
+from .passwords import hash_password, verify_password
 
 STARTERS = ["Coffee", "Milk", "Sugar", "Tea", "Sticks"]
 ROLE_LABEL = {"super_admin": "Super Admin", "office_manager": "Office Manager", "admin": "Admin", "accounts": "Accounts"}
@@ -201,16 +203,58 @@ async def names_by_id(db):
     return {r["id"]: r["display_name"] for r in await db.all("SELECT id, display_name FROM person")}
 
 
-async def seed_production(db):
-    if await db.get("SELECT id FROM person LIMIT 1"):
-        return
+def seed_email():
     email = intuitive_sign_in_name(os.getenv("SEED_SUPERADMIN_EMAIL", "Siddharth.Kalyani@intuitive.AI"))
     if not email:
         raise ValueError("SEED_SUPERADMIN_EMAIL must be an @intuitive.AI sign-in name.")
+    return email
+
+
+def bootstrap_password():
+    # A one-time first password for the seeded Super Admin, supplied by the
+    # deployment (Secret Manager). It works like an invite password.
+    value = os.getenv("BOOTSTRAP_SUPERADMIN_PASSWORD", "").strip()
+    if value and not 16 <= len(value) <= 128:
+        raise ValueError("BOOTSTRAP_SUPERADMIN_PASSWORD must be 16 to 128 characters.")
+    return value
+
+
+async def seed_production(db):
+    bootstrap = bootstrap_password()
+    if await db.get("SELECT id FROM person LIMIT 1"):
+        if bootstrap:
+            await rearm_bootstrap(db, bootstrap)
+        return
+    if production() and not bootstrap and not entra_requested():
+        raise ValueError("Without Microsoft sign-in, the first start needs BOOTSTRAP_SUPERADMIN_PASSWORD.")
+    email = seed_email()
     name = clean_name(os.getenv("SEED_SUPERADMIN_NAME", "Siddharth Kalyani")) or "Siddharth Kalyani"
     oid = os.getenv("SEED_SUPERADMIN_OBJECT_ID", "").strip() or None
     if oid and not UUID.fullmatch(oid):
         raise ValueError("SEED_SUPERADMIN_OBJECT_ID must be a directory object id.")
     person_id = new_id()
-    await db.run("INSERT INTO person (id, directory_object_id, sign_in_name, display_name, active) VALUES (?, ?, ?, ?, 1)", person_id, oid, email, name)
+    if bootstrap:
+        hashed = await asyncio.to_thread(hash_password, bootstrap)
+        await db.run("INSERT INTO person (id, directory_object_id, sign_in_name, display_name, active, password_hash, must_set_password, invited_at, failed_attempts) VALUES (?, ?, ?, ?, 1, ?, 1, ?, 0)", person_id, oid, email, name, hashed, stamp())
+    else:
+        await db.run("INSERT INTO person (id, directory_object_id, sign_in_name, display_name, active) VALUES (?, ?, ?, ?, 1)", person_id, oid, email, name)
     await grant(db, person_id, person_id, "super_admin", None)
+
+
+async def rearm_bootstrap(db, password):
+    # Only a fresh install whose single, seeded Super Admin has never chosen a
+    # password. Once anyone else exists or the password is chosen, this is inert.
+    people = await db.all("SELECT * FROM person LIMIT 2")
+    if len(people) != 1:
+        return
+    person = people[0]
+    if not person["active"] or not person["must_set_password"] or person["sign_in_name"].lower() != seed_email().lower():
+        return
+    if not await db.get("SELECT id FROM role_grant WHERE person_id = ? AND role = 'super_admin' AND deleted_at IS NULL", person["id"]):
+        return
+    expired = not person["invited_at"] or parse_stamp(person["invited_at"]) + timedelta(seconds=INVITE_SECONDS) <= now()
+    if not expired and person["password_hash"] and await asyncio.to_thread(verify_password, password, person["password_hash"]):
+        return
+    hashed = await asyncio.to_thread(hash_password, password)
+    await db.run("UPDATE person SET password_hash = ?, must_set_password = 1, invited_at = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?", hashed, stamp(), person["id"])
+    await db.run("DELETE FROM setup_ticket WHERE person_id = ?", person["id"])

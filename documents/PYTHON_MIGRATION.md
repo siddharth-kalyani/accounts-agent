@@ -80,7 +80,7 @@ The repository migration is complete. The following production acceptance work r
 - [ ] Rehearse restart, backup/restore and any approved data cutover on staging copies; measure realistic load.
 - [ ] Deploy through the approved release process after staging acceptance.
 
-These require the actual deployment environment. No production deployment or live data migration was performed. Follow [Azure deployment](AZURE_DEPLOYMENT.md) for Python App Service runtime/startup, Oryx installation, same-database cutover, and the separate SQLite-to-PostgreSQL migration. Preserve `SESSION_SECRET` and retain the old data/backup until an explicitly planned cutover is complete.
+These require the actual deployment environment. No production deployment or live data migration was performed. Hosting has since moved to Google Cloud; follow [GCP deployment](GCP_DEPLOYMENT.md) for the Cloud Run build and start-up. The separate SQLite-to-PostgreSQL migration tool now writes receipts to `GCS_RECEIPTS_BUCKET`. Preserve `SESSION_SECRET` and retain the old data/backup until an explicitly planned cutover is complete.
 
 ## Handoff
 
@@ -98,7 +98,7 @@ GitHub-hosted checks run on push. They install Chromium and PostgreSQL 16, repea
 
 ### What remains
 
-Complete the external staging checklist above using [Azure deployment](AZURE_DEPLOYMENT.md): real Entra/Graph consent, PostgreSQL TLS/private networking, Blob managed identity, restart/restore, and load tests. Mocks cannot establish those. Keep the existing session secret and database during a same-database backend cutover. Never point tests at the live `DATABASE_URL`.
+Complete the external staging checklist using [GCP deployment](GCP_DEPLOYMENT.md): Cloud SQL connectivity, the service account's bucket and Gemini access, restart/restore, and load tests (Entra/Graph consent only once Microsoft sign-in is turned on). Mocks cannot establish those. Keep the existing session secret and database during a same-database backend cutover. Never point tests at the live `DATABASE_URL`.
 
 ```sh
 # Run from the accounts-agent repository root, with Node 24 selected.

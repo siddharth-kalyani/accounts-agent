@@ -226,9 +226,18 @@ def test_rate_limits_and_proxy_identity(monkeypatch):
     def req(headers):
         return Request({"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers.items()], "client": ("192.0.2.1", 1234)})
     assert client_ip(req({"x-forwarded-for": "spoofed"})) == "192.0.2.1"
-    monkeypatch.setenv("WEBSITE_SITE_NAME", "test")
-    assert client_ip(req({"client-ip": "203.0.113.1:1234"})) == "203.0.113.1"
-    assert client_ip(req({"client-ip": "[2001:db8::1]:1234"})) == "2001:db8::1"
+    monkeypatch.setenv("K_SERVICE", "test")
+    # Google appends the caller last; a forged value further left is ignored.
+    assert client_ip(req({"x-forwarded-for": "203.0.113.1"})) == "203.0.113.1"
+    assert client_ip(req({"x-forwarded-for": "198.51.100.7, 203.0.113.1"})) == "203.0.113.1"
+    assert client_ip(req({"x-forwarded-for": "2001:db8::1"})) == "2001:db8::1"
+    assert client_ip(req({"x-forwarded-for": "not-an-address"})) == "192.0.2.1"
+    assert client_ip(req({})) == "192.0.2.1"
+    monkeypatch.setenv("PANTRY_PROXY_HOPS", "2")
+    assert client_ip(req({"x-forwarded-for": "198.51.100.7, 203.0.113.1, 192.0.2.50"})) == "203.0.113.1"
+    assert client_ip(req({"x-forwarded-for": "203.0.113.1"})) == "192.0.2.1"
+    monkeypatch.setenv("PANTRY_PROXY_HOPS", "nonsense")
+    assert client_ip(req({"x-forwarded-for": "198.51.100.7, 203.0.113.1"})) == "203.0.113.1"
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("APP_ORIGIN", "https://pantry.example.com")
     assert allowed_origin(req({"origin": "https://pantry.example.com"}))

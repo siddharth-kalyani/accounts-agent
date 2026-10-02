@@ -3,7 +3,6 @@ import asyncio
 import calendar
 import json
 import logging
-import os
 import re
 from datetime import date
 from pathlib import Path
@@ -11,10 +10,12 @@ import httpx
 from .core import HttpError, chat_thread
 from .compat import text as js_text, number, dumps
 from . import conversations as c
+from . import gemini
 from . import inventory as inv
 from .calc import add_days, project_run_out, today_in_india
 
-COMPLETIONS = "https://api.tokenrouter.com/v1/chat/completions"
+# Gemini counts its thinking inside this limit, so leave room beyond the reply.
+MAX_OUTPUT_TOKENS = 4096
 TOOLS = json.loads(Path(__file__).with_name("chat_tools.json").read_text())
 PROMPT = Path(__file__).with_name("chat_prompt.txt").read_text()
 PRODUCT_NAMES = ["coffee", "milk", "sugar", "tea", "sticks"]
@@ -27,16 +28,8 @@ def matches(pattern, text):
     return bool(re.search(pattern, text, re.I))
 
 
-def model_name():
-    return os.getenv("TOKENROUTER_MODEL") or os.getenv("OPENROUTER_MODEL") or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
-
-
-def api_key():
-    return os.getenv("TOKENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY") or ""
-
-
 def chat_configured():
-    return bool(api_key())
+    return gemini.configured()
 
 
 async def system_prompt(db, person, context_office_name=None, context_month=None):
@@ -358,12 +351,18 @@ async def read_model_stream(upstream, on_delta):
 
 
 async def complete(messages, can_write, on_delta):
-    payload = {"model": model_name(), "temperature": .2, "max_tokens": 1200, "messages": messages,
+    # Gemini 3 is tuned for its default temperature, so none is sent.
+    payload = {"model": gemini.chat_model(), "max_tokens": MAX_OUTPUT_TOKENS, "reasoning_effort": gemini.reasoning_effort(), "messages": messages,
                "tools": TOOLS if can_write else [t for t in TOOLS if not t["function"]["name"].startswith("propose_")], "tool_choice": "auto"}
     if on_delta:
         payload["stream"] = True
+    try:
+        headers = await gemini.headers()
+    except Exception as error:
+        logger.warning("Assistant credentials unavailable (%s).", type(error).__name__)
+        raise HttpError(502, "The assistant could not reply. Try again in a moment.") from None
     async with asyncio.timeout(90), httpx.AsyncClient(timeout=90) as client:
-        async with client.stream("POST", COMPLETIONS, headers={"Authorization": f"Bearer {api_key()}", "Content-Type": "application/json"}, json=payload) as upstream:
+        async with client.stream("POST", gemini.completions_url(), headers=headers, json=payload) as upstream:
             if not upstream.is_success:
                 logger.warning("Assistant upstream failed (%s).", upstream.status_code)
                 raise HttpError(502, "The assistant could not reply. Try again in a moment.")
@@ -426,7 +425,7 @@ async def converse_in_thread(db, person, history, message, *, on_delta=None, on_
     known = await factual_reply(db, person, text, history, context_office_id, context_month)
     if known:
         return await deliver(response(known))
-    if not api_key():
+    if not gemini.configured():
         return await deliver(response("The assistant is not switched on yet. Recording on the pantry screen still works."))
     can_write = (await c.snapshot_for_chat(db, person))["canWriteSomewhere"]
     screen_name = None

@@ -92,8 +92,8 @@ async def run(args):
         snapshot = inspect_migration(args.source, args.receipts)
         print(json.dumps({"mode": "execute" if args.execute else "check", "counts": snapshot["counts"], "receipts": len(snapshot["receipts"])}))
         if args.execute:
-            if not os.getenv("DATABASE_URL") or not os.getenv("AZURE_STORAGE_ACCOUNT_URL"):
-                raise ValueError("Execution requires the target DATABASE_URL and AZURE_STORAGE_ACCOUNT_URL.")
+            if not os.getenv("DATABASE_URL") or not os.getenv("GCS_RECEIPTS_BUCKET"):
+                raise ValueError("Execution requires the target DATABASE_URL and GCS_RECEIPTS_BUCKET.")
             target = await open_database(seed="none")
             await migrate_snapshot(target, snapshot)
             print("Migration verified. Sessions and pending chat confirmations were not copied; everyone must sign in again.")

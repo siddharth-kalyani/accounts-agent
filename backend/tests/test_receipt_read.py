@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 import httpx
 import pytest
-from pantry import chat, receipt_read
+from pantry import gemini, receipt_read
+from .conftest import switch_on_gemini
 from pantry.app import create_app
 
 
@@ -130,16 +131,31 @@ async def test_ask_model_payload_stays_a_tool_call(monkeypatch):
             captured["json"] = json
             return Response()
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read.httpx, "AsyncClient", Client)
     await receipt_read.ask_model([{"role": "user", "content": "hi"}], "auto")
-    assert captured["url"] == chat.COMPLETIONS
-    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["url"] == "https://asia-south1-aiplatform.googleapis.com/v1beta1/projects/synthetic-project/locations/asia-south1/endpoints/openapi/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer synthetic-google-token"
     body = captured["json"]
-    assert body["stream"] is False and body["temperature"] == 0.2 and body["max_tokens"] == receipt_read.MAX_OUTPUT_TOKENS
-    assert body["reasoning"] == {"enabled": False, "effort": "none"}
+    assert body["model"] == "google/gemini-3.8-flash" and body["reasoning_effort"] == "low"
+    assert body["stream"] is False and body["max_tokens"] == receipt_read.MAX_OUTPUT_TOKENS
+    # Gemini 3 keeps its default temperature; the old gateway-only field is gone.
+    assert "temperature" not in body and "reasoning" not in body
     assert "response_format" not in body and body["tool_choice"] == "auto"
     assert {tool["function"]["name"] for tool in body["tools"]} == {"lookup_item", "submit_receipt"}
+    monkeypatch.setenv("GEMINI_RECEIPT_MODEL", "gemini-3.5-flash")
+    await receipt_read.ask_model([{"role": "user", "content": "hi"}], "auto")
+    assert captured["json"]["model"] == "google/gemini-3.5-flash"
+
+
+async def test_ask_model_reports_missing_google_credentials(monkeypatch):
+    switch_on_gemini(monkeypatch)
+    def no_credentials():
+        raise RuntimeError("no default credentials")
+    monkeypatch.setattr(gemini, "_token", no_credentials)
+    with pytest.raises(receipt_read.HttpError) as error:
+        await receipt_read.ask_model([{"role": "user", "content": "hi"}], "auto")
+    assert error.value.status == 502 and error.value.message == receipt_read.MODEL_FAILED
 
 
 async def test_missing_key_fails_without_calling_the_model(api, offices, monkeypatch):
@@ -177,7 +193,7 @@ async def test_lookup_then_submit_searches_once(api, offices, monkeypatch):
             return {"tool_calls": [{"id": "look", "type": "function", "function": {"name": "lookup_item", "arguments": json.dumps({"printed": "Maggi"})}}]}
         return submit_message({"date": "2026-09-18", "lines": [{"printed": "Maggi", "productName": "", "packs": 1, "pricePerPack": "14"}]})
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "search_web", search)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     office = offices["Ahmedabad"]
@@ -198,7 +214,7 @@ async def test_pdf_reaches_the_model_as_jpeg(api, offices, monkeypatch, scanned)
         seen["messages"] = messages
         return submit_message({"date": "2026-09-18", "lines": [{"printed": "Amul Taaza", "productName": "Milk", "packs": 2, "pricePerPack": "30"}]})
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     office = offices["Ahmedabad"]
     pdf = tiny_pdf()
@@ -233,7 +249,7 @@ async def test_unmatched_line_can_be_assigned_or_discarded_and_stays_with_its_pe
     async def ask(messages, tool_choice):
         return submit_message(payload)
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     assert (await api(f"/api/offices/{office}/receipt-readings/open", actor="manager")).json() == {"reading": None}
     started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
@@ -288,7 +304,7 @@ async def test_save_refuses_an_unresolved_line_and_readers_cannot_write(api, db,
     async def ask(messages, tool_choice):
         return submit_message({"date": "2026-09-18", "lines": [{"printed": "Maggi", "productName": "", "packs": 1, "pricePerPack": "14"}]})
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
     await settle()
@@ -320,7 +336,7 @@ async def test_counts_entered_while_reviewing_are_saved_with_the_purchases(api, 
     async def ask(messages, tool_choice):
         return submit_message({"date": "2026-09-18", "lines": [{"printed": "Amul Taaza", "productName": "Milk", "packs": 2, "pricePerPack": "30"}]})
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
     await settle()
@@ -341,7 +357,7 @@ async def test_counts_entered_while_reviewing_are_saved_with_the_purchases(api, 
 
 
 async def test_corrupt_pdf_fails_the_job(api, offices, monkeypatch):
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
 
     async def ask(messages, tool_choice):
         raise AssertionError("a corrupt file is not sent to the model")
@@ -676,7 +692,7 @@ async def test_verified_values_and_review_notes_survive_draft_roundtrip(api, db,
     async def ask(messages, choice):
         return submit_message({"date": "2026-09-18", "lines": [evidence("34")]})
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read, "ask_model", ask)
     office = offices["Ahmedabad"]
     started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
@@ -704,7 +720,7 @@ async def test_truncated_response_is_not_accepted_as_complete_receipt(monkeypatc
     async def post(self, *args, **kwargs):
         return Response()
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read.httpx.AsyncClient, "post", post)
     with pytest.raises(receipt_read.HttpError, match="response was incomplete"):
         await receipt_read.ask_model([], "auto")
@@ -720,7 +736,7 @@ async def test_provider_error_inside_http_200_is_not_an_empty_receipt(monkeypatc
     async def post(self, *args, **kwargs):
         return Response()
 
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "test-key")
+    switch_on_gemini(monkeypatch)
     monkeypatch.setattr(receipt_read.httpx.AsyncClient, "post", post)
     with pytest.raises(receipt_read.HttpError, match="could not be read"):
         await receipt_read.ask_model([], "auto")

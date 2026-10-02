@@ -22,6 +22,7 @@ def package(destination):
     shutil.copytree(ROOT / "frontend/dist", destination / "frontend/dist")
     shutil.copy2(ROOT / "backend/requirements.txt", destination / "requirements.txt")
     shutil.copy2(ROOT / "startup.sh", destination / "startup.sh")
+    shutil.copy2(ROOT / "Dockerfile", destination / "Dockerfile")
     print(f"Release staged at {destination}")
 
 

@@ -1,10 +1,10 @@
-"""Private, immutable local/Azure receipt objects (bounded to 10 MB on upload)."""
+"""Private, immutable local/Google Cloud Storage receipt objects (bounded to 10 MB on upload)."""
 import asyncio
 import os
 import re
 from pathlib import Path
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
-from azure.storage.blob import BlobServiceClient, ContentSettings
+from google.api_core.exceptions import PreconditionFailed
+from google.cloud import storage
 from .config import data_directory
 from .compat import text
 
@@ -29,23 +29,30 @@ def sniff_receipt(data):
     return ""
 
 
-def _blob_client():
-    credential = ManagedIdentityCredential() if os.getenv("WEBSITE_SITE_NAME") else DefaultAzureCredential()
-    client = BlobServiceClient(os.environ["AZURE_STORAGE_ACCOUNT_URL"], credential=credential,
-                               retry_total=1, connection_timeout=10, read_timeout=20)
-    return credential, client
+def receipts_bucket():
+    return os.getenv("GCS_RECEIPTS_BUCKET", "").strip()
+
+
+def _gcs_client():
+    # Application Default Credentials: the Cloud Run service account in
+    # production, or an operator's own gcloud login for an explicit migration.
+    return storage.Client()
 
 
 def _store(name, data, content_type):
-    if os.getenv("AZURE_STORAGE_ACCOUNT_URL"):
-        credential, client = _blob_client()
+    if receipts_bucket():
+        client = _gcs_client()
         try:
-            blob = client.get_blob_client(os.getenv("AZURE_STORAGE_CONTAINER") or "receipts", name)
-            blob.upload_blob(data, overwrite=False, timeout=20,
-                             content_settings=ContentSettings(content_type=content_type, cache_control="no-store", content_disposition="attachment"))
+            blob = client.bucket(receipts_bucket()).blob(name)
+            blob.cache_control = "no-store"
+            blob.content_disposition = "attachment"
+            try:
+                # Generation 0 means "only if no object has this name": never overwrite.
+                blob.upload_from_string(data, content_type=content_type, if_generation_match=0, timeout=20)
+            except PreconditionFailed:
+                raise FileExistsError(name) from None
         finally:
             client.close()
-            credential.close()
         return
     directory = data_directory() / "receipts"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -59,13 +66,12 @@ async def store_receipt(name, data, content_type):
 
 
 def _read(name):
-    if os.getenv("AZURE_STORAGE_ACCOUNT_URL"):
-        credential, client = _blob_client()
+    if receipts_bucket():
+        client = _gcs_client()
         try:
-            return client.get_blob_client(os.getenv("AZURE_STORAGE_CONTAINER") or "receipts", name).download_blob(timeout=20).readall()
+            return client.bucket(receipts_bucket()).blob(name).download_as_bytes(timeout=20)
         finally:
             client.close()
-            credential.close()
     return (data_directory() / "receipts" / name).read_bytes()
 
 

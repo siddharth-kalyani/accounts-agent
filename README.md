@@ -4,7 +4,7 @@ Phase 1 pantry expense management for invited Intuitive employees. React display
 
 - [Migration checklist, compatibility and test evidence](documents/PYTHON_MIGRATION.md)
 - [Production review and remaining release gates](documents/PRODUCTION_READINESS.md)
-- [Azure deployment, migration and recovery](documents/AZURE_DEPLOYMENT.md)
+- [Google Cloud deployment, first sign-in and recovery](documents/GCP_DEPLOYMENT.md)
 - [Original scope / BRD](documents/Accounts_and_Inventory_Management_Agent_Scope_and_BRD.pdf)
 - [Contributor rules](AGENTS.md)
 
@@ -36,7 +36,7 @@ On Windows, use `py -3.12 -m venv backend/.venv` and `backend/.venv/Scripts/pyth
 
 Copy `.env.example` to a private `.env` and configure Microsoft sign-in if needed. Open `http://127.0.0.1:5173`; Vite forwards `/api` to FastAPI on port 8787. Do not use production credentials for tests or enable fixture seeding in your local `.env`.
 
-New checkouts store local SQLite/receipts/signing secret in `backend/data/`. If an existing `server/data/` directory is present, it remains the default so existing records, receipts and sessions are preserved. `PANTRY_DATA_DIR` explicitly overrides that location. The old data and MVP backup are never moved or deleted by this migration. A new real database starts with only the configured Super Admin, no offices and no default password; first access uses that person's Microsoft identity.
+New checkouts store local SQLite/receipts/signing secret in `backend/data/`. If an existing `server/data/` directory is present, it remains the default so existing records, receipts and sessions are preserved. `PANTRY_DATA_DIR` explicitly overrides that location. The old data and MVP backup are never moved or deleted by this migration. A new real database starts with only the configured Super Admin, no offices and no default password; first access uses `BOOTSTRAP_SUPERADMIN_PASSWORD` (changed at first sign-in) or, when Microsoft sign-in is configured, that person's Microsoft identity.
 
 For the built frontend:
 
@@ -45,7 +45,7 @@ npm run build
 npm start
 ```
 
-FastAPI serves `frontend/dist` and `/api`. Set `APP_ORIGIN` and the Microsoft callback to the actual browser origin. The direct Python equivalent, after activating the virtual environment, is `PYTHONPATH=backend python -m pantry` (PowerShell: set `$env:PYTHONPATH="backend"` first). Production uses `bash startup.sh`, which defaults to App Service's port 8000.
+FastAPI serves `frontend/dist` and `/api`. Set `APP_ORIGIN` and the Microsoft callback to the actual browser origin. The direct Python equivalent, after activating the virtual environment, is `PYTHONPATH=backend python -m pantry` (PowerShell: set `$env:PYTHONPATH="backend"` first). Production runs `bash startup.sh` inside the Cloud Run container, on the `PORT` Cloud Run supplies.
 
 ## Verify changes
 
@@ -61,14 +61,14 @@ backend/.venv/bin/python -m pip_audit -r backend/requirements.txt --no-deps --di
 npm audit --audit-level=high
 ```
 
-Browser tests start real FastAPI on a free loopback port with disposable data. An existing development server can keep running. `PANTRY_BROWSER_CHANNEL=chrome npm run test:browser` uses installed Chrome. Tests cover the original Node contract corpus, HTTP routes, real PostgreSQL, signed Microsoft tokens/mock Graph and Blob, release startup/restart, and desktop/mobile workflows. No live pantry or cloud credentials are used. Azure networking, TLS and managed identity still need staging validation.
+Browser tests start real FastAPI on a free loopback port with disposable data. An existing development server can keep running. `PANTRY_BROWSER_CHANNEL=chrome npm run test:browser` uses installed Chrome. Tests cover the original Node contract corpus, HTTP routes, real PostgreSQL, signed Microsoft tokens/mock Graph, mocked Cloud Storage and Gemini, release startup/restart, and desktop/mobile workflows. No live pantry or cloud credentials are used. Cloud SQL networking, the service account's access and the real Gemini endpoint still need staging validation.
 
 For backend-only work, activate the environment and run `python -m pytest -c backend/pyproject.toml backend/tests`. Build the frontend first because the full suite also verifies the packaged website. Python direct dependencies are declared in `backend/pyproject.toml`; the requirements files pin their full dependency closure. When updating dependencies, update both, install into a clean Python 3.12 environment, run `pip check`, the full suite and audits. Frontend versions are locked in the root workspace `package-lock.json`.
 
 ## Production
 
-One Linux Azure App Service runs Python 3.12/Uvicorn and the built React frontend. PostgreSQL stores application data and sessions; a private Azure Blob container stores receipts; Key Vault supplies secrets. Start with one process/instance. `APP_ENV=production` enables fail-closed production checks; existing `NODE_ENV=production` settings remain supported. Keep `SESSION_SECRET` stable through cutover.
+One Cloud Run service runs Python 3.12/Uvicorn and the built React frontend in one container. Cloud SQL for PostgreSQL stores application data and sessions; a private Cloud Storage bucket stores receipts; Secret Manager supplies secrets; Gemini on Google Cloud answers the assistant and reads receipts, signed in as the service account with no API key. Start with one always-on instance. `APP_ENV=production` enables fail-closed production checks; existing `NODE_ENV=production` settings remain supported. Keep `SESSION_SECRET` stable. Sign-in is email and password until Microsoft settings are added; the first Super Admin uses a one-time password from Secret Manager.
 
-After verification, `python scripts/package_release.py` stages a clean `release/` artifact with runtime source, pinned requirements, startup script and built frontend. It refuses to overwrite a nonempty directory. GitHub checks build and upload this artifact; they do not deploy. Follow the [Azure guide](documents/AZURE_DEPLOYMENT.md) for Python runtime configuration and Oryx dependency installation.
+After verification, `python scripts/package_release.py` stages a clean `release/` artifact with runtime source, pinned requirements, startup script, `Dockerfile` and built frontend. It refuses to overwrite a nonempty directory. GitHub checks build and upload this artifact; they do not deploy. Follow the [Google Cloud guide](documents/GCP_DEPLOYMENT.md) to build and deploy it with `gcloud run deploy --source release`.
 
 Sessions retain their 15-minute access cookies and rotating refresh cookies with 90-day inactivity / 180-day absolute limits. Local password login has no MFA by the owner's explicit choice; Microsoft MFA does not protect that alternative route.

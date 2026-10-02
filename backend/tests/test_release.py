@@ -15,7 +15,7 @@ def test_release_contents_startup_static_and_restart(tmp_path):
     package = tmp_path / "release"
     subprocess.run([sys.executable, str(ROOT / "scripts/package_release.py"), str(package)], check=True, capture_output=True)
     names = {p.relative_to(package).as_posix() for p in package.rglob("*") if p.is_file()}
-    assert {"startup.sh", "requirements.txt", "backend/pantry/app.py", "backend/pantry/schema.sql", "frontend/dist/index.html"} <= names
+    assert {"startup.sh", "requirements.txt", "Dockerfile", "backend/pantry/app.py", "backend/pantry/gemini.py", "backend/pantry/schema.sql", "frontend/dist/index.html"} <= names
     assert not any(any(part in path.split('/') for part in ('.env', 'node_modules', '.venv', 'tests', 'data', '__pycache__')) for path in names)
     assert not any(path.endswith(('.sqlite', '.mjs')) for path in names)
     runtime = os.getenv("PANTRY_RELEASE_PYTHON") or sys.executable

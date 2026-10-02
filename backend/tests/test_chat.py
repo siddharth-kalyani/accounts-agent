@@ -3,7 +3,8 @@ import json
 from datetime import timedelta
 import httpx
 import pytest
-from pantry import core as c, conversations as conv, chat, inventory as inv, accounts as a
+from pantry import core as c, conversations as conv, chat, gemini, inventory as inv, accounts as a
+from .conftest import REAL_GOOGLE_TOKEN, switch_on_gemini
 from .test_accounts import fails
 
 
@@ -57,7 +58,7 @@ async def test_factual_followup_and_temporary_closure_do_not_call_model(db, peop
     async def no_model(*args):
         raise AssertionError("A factual query must not call the provider")
     monkeypatch.setattr(chat, "complete", no_model)
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "synthetic-test-key")
+    switch_on_gemini(monkeypatch)
     pantry = await inv.get_pantry(db, people["manager"], offices["Ahmedabad"])
     coffee = next(p for p in pantry["products"] if p["name"] == "Coffee")
     question = "how much coffee is left at Ahmedabad?"
@@ -70,7 +71,7 @@ async def test_factual_followup_and_temporary_closure_do_not_call_model(db, peop
 
 
 async def test_model_tool_loop_prepares_then_confirms_and_suppresses_premature_saved_claim(db, people, offices, monkeypatch):
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "synthetic-test-key")
+    switch_on_gemini(monkeypatch)
     calls = []
     async def model(messages, can_write, on_delta):
         calls.append(messages.copy())
@@ -91,7 +92,7 @@ async def test_model_tool_loop_prepares_then_confirms_and_suppresses_premature_s
 
 
 async def test_model_call_rechecks_live_grants(db, people, monkeypatch):
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "synthetic-test-key")
+    switch_on_gemini(monkeypatch)
     calls = 0
     async def model(messages, can_write, on_delta):
         nonlocal calls
@@ -109,7 +110,7 @@ async def test_model_call_rechecks_live_grants(db, people, monkeypatch):
 
 
 async def test_streaming_provider_tool_fragments_and_http_failure(monkeypatch):
-    monkeypatch.setenv("TOKENROUTER_API_KEY", "synthetic-test-key")
+    switch_on_gemini(monkeypatch)
     real_client = httpx.AsyncClient
     captured = []
     def handler(request):
@@ -117,16 +118,72 @@ async def test_streaming_provider_tool_fragments_and_http_failure(monkeypatch):
         frames = [{"content": "Hello "}, {"content": "world."}, {"tool_calls": [{"index": 0, "id": "a", "function": {"name": "get_", "arguments": '{"office":'}}]}, {"tool_calls": [{"index": 0, "function": {"name": "pantry", "arguments": '"Ahmedabad"}'}}]}]
         content = "\n".join("data: " + json.dumps({"choices": [{"delta": frame}]}) + "\n" for frame in frames) + "data: [DONE]\n"
         return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
-    monkeypatch.setattr(chat.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    requests = []
+    def recording(request):
+        requests.append(request)
+        return handler(request)
+    monkeypatch.setattr(chat.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(recording), **kwargs))
     pieces = []
     result = await chat.complete([{"role": "user", "content": "hello"}], False, pieces.append)
     assert "".join(pieces) == "Hello world."
     assert result["tool_calls"][0]["function"] == {"name": "get_pantry", "arguments": '{"office":"Ahmedabad"}'}
     assert not any(t["function"]["name"].startswith("propose_") for t in captured[0]["tools"])
-    assert captured[0]["stream"] is True and captured[0]["model"] == chat.model_name()
+    assert captured[0]["stream"] is True and captured[0]["model"] == "google/gemini-3.1-flash-lite"
+    assert captured[0]["reasoning_effort"] == "low" and captured[0]["max_tokens"] == chat.MAX_OUTPUT_TOKENS and "temperature" not in captured[0]
+    assert str(requests[0].url) == "https://asia-south1-aiplatform.googleapis.com/v1beta1/projects/synthetic-project/locations/asia-south1/endpoints/openapi/chat/completions"
+    assert requests[0].headers["authorization"] == "Bearer synthetic-google-token"
     monkeypatch.setattr(chat.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(lambda _: httpx.Response(503, json={"private": "upstream secret"})), **kwargs))
     with fails(502, "could not reply"):
         await chat.complete([], False, None)
+
+
+async def test_chat_without_google_credentials_fails_cleanly(monkeypatch):
+    switch_on_gemini(monkeypatch)
+    def no_credentials():
+        raise RuntimeError("no default credentials")
+    monkeypatch.setattr(gemini, "_token", no_credentials)
+    with fails(502, "could not reply"):
+        await chat.complete([{"role": "user", "content": "hello"}], False, None)
+
+
+def test_gemini_settings_endpoint_and_model_ids(monkeypatch):
+    assert not gemini.configured() and not chat.chat_configured()
+    monkeypatch.setenv("VERTEX_PROJECT", "synthetic-project")
+    monkeypatch.setenv("VERTEX_LOCATION", "global")
+    assert gemini.configured() and chat.chat_configured()
+    assert gemini.completions_url() == "https://aiplatform.googleapis.com/v1beta1/projects/synthetic-project/locations/global/endpoints/openapi/chat/completions"
+    assert gemini.chat_model() == "google/gemini-3.1-flash-lite" and gemini.receipt_model() == "google/gemini-3.8-flash"
+    monkeypatch.setenv("GEMINI_CHAT_MODEL", "google/gemini-3.5-flash-lite")
+    assert gemini.chat_model() == "google/gemini-3.5-flash-lite"
+    monkeypatch.setenv("GEMINI_CHAT_MODEL", "../../other?x=1")
+    assert gemini.chat_model() == "google/gemini-3.1-flash-lite"
+    monkeypatch.setenv("GEMINI_REASONING_EFFORT", "HIGH")
+    assert gemini.reasoning_effort() == "high"
+    monkeypatch.setenv("GEMINI_REASONING_EFFORT", "none")
+    assert gemini.reasoning_effort() == "low"
+    monkeypatch.setenv("VERTEX_LOCATION", "asia-south1/../elsewhere")
+    assert not gemini.configured()
+
+
+def test_google_token_is_cached_and_refreshed_only_when_expired(monkeypatch):
+    import google.auth
+    calls = {"default": 0, "refresh": 0}
+    class Credentials:
+        valid, token = False, None
+        def refresh(self, request):
+            calls["refresh"] += 1
+            self.valid, self.token = True, f"token-{calls['refresh']}"
+    credentials = Credentials()
+    def default(scopes):
+        assert scopes == [gemini.SCOPE]
+        calls["default"] += 1
+        return credentials, "synthetic-project"
+    monkeypatch.setattr(google.auth, "default", default)
+    monkeypatch.setattr(gemini, "_token", REAL_GOOGLE_TOKEN)
+    assert gemini._token() == "token-1" and gemini._token() == "token-1"
+    credentials.valid = False
+    assert gemini._token() == "token-2"
+    assert calls == {"default": 1, "refresh": 2}
 
 
 async def test_open_screen_is_only_a_fallback_for_the_office(db, people, offices):

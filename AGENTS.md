@@ -18,7 +18,7 @@ Client: React and Vite, `frontend/`, http://127.0.0.1:5173/
 
 API: Python/FastAPI, `backend/pantry/app.py`, http://127.0.0.1:8787/
 
-Data: new checkouts use SQLite at `backend/data/pantry.sqlite`. Existing `server/data/` remains the default when present; `PANTRY_DATA_DIR` can explicitly override it. Never silently initialize an empty pantry beside existing data. Production uses PostgreSQL through `DATABASE_URL` and Azure Blob for receipts. `backend/pantry/database.py` exposes asynchronous operations and connection/transaction scopes; await service calls. Passing an explicit database filename always selects SQLite, keeping tests off the production database.
+Data: new checkouts use SQLite at `backend/data/pantry.sqlite`. Existing `server/data/` remains the default when present; `PANTRY_DATA_DIR` can explicitly override it. Never silently initialize an empty pantry beside existing data. Production runs on Google Cloud only: Cloud Run, Cloud SQL for PostgreSQL through `DATABASE_URL` (a Cloud SQL Unix socket), and a private Cloud Storage bucket (`GCS_RECEIPTS_BUCKET`) for receipts. `backend/pantry/database.py` exposes asynchronous operations and connection/transaction scopes; await service calls. Passing an explicit database filename always selects SQLite, keeping tests off the production database.
 
 Use Python 3.12 for the backend and Node.js 24 LTS for frontend tooling. Install the virtual environment/dependencies as described in README.md. Start from this folder with `npm run dev`. `npm start` runs the API and serves `frontend/dist` when built. `npm run build` builds the client.
 
@@ -30,7 +30,7 @@ Use commands appropriate to the environment's actual shell. Do not infer PowerSh
 
 Older notes refer to a Phase 1 architecture text and project schedule in the author's Windows Downloads folder. Those are external documents, not guaranteed to exist in this checkout.
 
-[Production readiness](documents/PRODUCTION_READINESS.md) records verified findings, approved exclusions and outstanding release gates. [Azure deployment](documents/AZURE_DEPLOYMENT.md) covers the approved App Service + PostgreSQL design, migration, secrets and recovery. Read the relevant document before changing production behavior or deployment guidance. Do not call Azure integration verified solely because local tests pass.
+[Production readiness](documents/PRODUCTION_READINESS.md) records verified findings, approved exclusions and outstanding release gates. [GCP deployment](documents/GCP_DEPLOYMENT.md) covers the approved Cloud Run + Cloud SQL + Cloud Storage + Gemini design, secrets, first sign-in and recovery. Azure and TokenRouter were removed by the owner. Read the relevant document before changing production behavior or deployment guidance. Do not call Google Cloud integration verified solely because local tests pass.
 
 Phase names use a colon. Phase 1: Pantry expense management. Phase 2: One dashboard. Phase 3: Campus drives.
 
@@ -99,7 +99,7 @@ Two ways in, same allowlist:
 - Email and password on the sign-in page.
 - Microsoft, via the button. It works only after `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, and `ENTRA_CLIENT_SECRET` are set. Redirect URI is `http://127.0.0.1:5173/api/auth/callback`. Do not print those values. Do not remove the Microsoft button.
 
-Production uses the exact HTTPS origin/callback instead, requires the member `acct: 0` optional ID-token claim and the seed administrator's Entra user Object ID. Keep both login methods. The owner explicitly chose no MFA for local password login; do not describe Microsoft MFA as protecting that route.
+The owner deferred Microsoft sign-in for the first Google Cloud deployment: production runs email and password only while every `ENTRA_*` setting is absent. Setting any of them turns on the full Microsoft check, which uses the exact HTTPS origin/callback, requires the member `acct: 0` optional ID-token claim and the seed administrator's Entra user Object ID; half a configuration refuses to start. Keep the Microsoft code and button. The owner explicitly chose no MFA for local password login; do not describe Microsoft MFA as protecting that route.
 
 Invite flow, Super Admin only, Access screen:
 
@@ -109,11 +109,11 @@ Invite flow, Super Admin only, Access screen:
 - At least one active Super Admin always remains. The server refuses to remove that role from, or turn off, the last active Super Admin (inactive Super Admins do not count), and the Access screen does not offer those buttons for that person.
 - The Access people list is searchable by name, email, or role. Connect directory search is under development; its button only shows a toast.
 - An invite expires after seven days. Reissuing one revokes earlier setup tickets and sessions. Disabling a person revokes all app sessions/tickets; re-enabling must not revive them.
-- Local password change and Super Admin password reset are explicitly deferred to future work by the owner. Do not add a reset workflow without a new request. Microsoft login remains the alternative for a forgotten local password; compromised local accounts must remain disabled until safely recovered.
+- Local password change and Super Admin password reset are explicitly deferred to future work by the owner. Do not add a reset workflow without a new request. Microsoft login remains the alternative for a forgotten local password; while it is off, a forgotten password has no in-app recovery, so keep two active Super Admins. Compromised local accounts must remain disabled until safely recovered.
 
 Chosen passwords: at least 12 characters, at most 128, one uppercase, one lowercase, one number, no leading or trailing space, not a common password, and not containing the mailbox name. The new password must differ from the invite password. Five wrong attempts lock the account for 15 minutes.
 
-Seeded Super Admin: `Siddharth.Kalyani@intuitive.AI`. Production databases start with that person and no offices. Fixture mode (`PANTRY_SEED=fixtures` or `await open_database(file, seed="fixtures")`) is for tests only. Do not turn fixture seed on in `.env`.
+Seeded Super Admin: `Siddharth.Kalyani@intuitive.AI`. Production databases start with that person and no offices. Without Microsoft sign-in, the first start needs `BOOTSTRAP_SUPERADMIN_PASSWORD` (Secret Manager, 16 to 128 characters): it is stored as a scrypt hash and works exactly like an invite password (seven days, must be changed at first sign-in). A restart re-arms it only while that single seeded person has never chosen a password; otherwise it does nothing. Remove the secret after first sign-in. Fixture mode (`PANTRY_SEED=fixtures` or `await open_database(file, seed="fixtures")`) is for tests only. Do not turn fixture seed on in `.env`.
 
 Roles are grants in the app, not Entra roles:
 
@@ -160,9 +160,9 @@ Calculations live in `backend/pantry/calc.py`. Do not reimplement them in the cl
 - Spend is packs times price per pack on purchases that are not soft-deleted. Amounts are INR.
 - Nothing in pantry stock is hard-deleted. Hide, withdraw, and remove set `deleted_at` and `deleted_by`.
 - `created_by` and `created_at` stay as first written.
-- A failed receipt upload still keeps the purchase. Receipts are PDF, JPEG, or PNG, checked from the file bytes, at most 10MB, stored locally under `PANTRY_DATA_DIR/receipts` (new default `backend/data`, or existing `server/data`) or in private Azure Blob Storage. Immutable versioned object names preserve older receipts for backup recovery. Downloads require office access and are attachments. The screen previews a receipt from a blob URL and still offers Download. Type checks are not a malware scanner.
+- A failed receipt upload still keeps the purchase. Receipts are PDF, JPEG, or PNG, checked from the file bytes, at most 10MB, stored locally under `PANTRY_DATA_DIR/receipts` (new default `backend/data`, or existing `server/data`) or in the private Cloud Storage bucket. Uploads are create-only (`if_generation_match=0`); immutable versioned object names preserve older receipts for backup recovery. Downloads require office access and are attachments. The screen previews a receipt from a blob URL and still offers Download. Type checks are not a malware scanner.
 - Chat stock questions are answered by `factual_reply` in `backend/pantry/chat.py` from live pantry data, before any model call. The open office and month are a fallback when the message does not name an office. A named office in the message or an earlier turn still wins.
-- The model is TokenRouter at `https://api.tokenrouter.com/v1/chat/completions`, model `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, key in `OPENROUTER_API_KEY` or `TOKENROUTER_API_KEY`. Do not print the key. Do not set `NODE_TLS_REJECT_UNAUTHORIZED`. This app deletes that variable for its own processes.
+- The model is Gemini on Google Cloud (Agent Platform, formerly Vertex AI) through its OpenAI-compatible chat completions endpoint, in `backend/pantry/gemini.py`. Chat uses `GEMINI_CHAT_MODEL` (default `gemini-3.1-flash-lite`); receipt reading uses `GEMINI_RECEIPT_MODEL` (default `gemini-3.8-flash`). `VERTEX_PROJECT` and `VERTEX_LOCATION` switch it on. There is no API key: the service account's short-lived Google token is sent. Requests send no temperature (Gemini 3 is tuned for its default) and `reasoning_effort` low; output limits leave room for thinking tokens. Do not print tokens. Do not set `NODE_TLS_REJECT_UNAUTHORIZED`. This app deletes that variable for its own processes.
 - Replies stream over `POST /api/chat` when `stream` is true. SSE events are `thread`, `delta`, `replace`, `done`, and `error`. The JSON path remains.
 - Follow-ups stay on `threadId`. Errors still return `threadId`.
 - One product, one purchase, or one shelf count can be deleted from chat only after the assistant says the data will be deleted and the person says yes. A purchase can also be removed from Purchases and receipts. Accounts and Admin are refused. Hide, restore, wipe, rename, and receipt-only delete stay refused. Weather and other non-pantry topics are refused.
@@ -175,22 +175,22 @@ Calculations live in `backend/pantry/calc.py`. Do not reimplement them in the cl
 
 - Parameterized SQL only. Authorize every route. Super Admin checks live on the server, not only in the nav.
 - Unknown failures return "Something went wrong." Do not send stack traces, tokens, or password hashes to the client.
-- Do not log invite passwords, session cookies, refresh tokens, or the API key.
-- Rate limits exist on login, refresh, and the API. Keep them.
-- Bind the API to `127.0.0.1` unless `WEBSITE_SITE_NAME` or `PANTRY_HOST` says otherwise.
+- Do not log invite passwords, the bootstrap password, session cookies, refresh tokens, or Google tokens.
+- Rate limits exist on login, refresh, and the API. Keep them. On Cloud Run the caller's address is the `X-Forwarded-For` entry Google's front end appends, counted from the right (`PANTRY_PROXY_HOPS`, default 1); never trust the leftmost, client-supplied entry.
+- Bind the API to `127.0.0.1` unless `K_SERVICE` (Cloud Run) or `PANTRY_HOST` says otherwise.
 - `.env`, `backend/data/`, legacy `server/data/`, Python virtual environments, and `node_modules/` stay untracked. `server/data/pantry.sqlite.mvp-backup` is the old demo database. Do not delete it and do not point the app at it.
-- Production startup requires HTTPS, PostgreSQL, Blob configuration, strong session secret and Microsoft credentials; fixtures are forbidden. Never weaken those checks to make deployment work.
-- Preserve transaction scopes and parameterized values when changing SQLite/PostgreSQL queries. App Service starts with one process/instance; rate limits are per-process. Do not scale out without revisiting abuse limits and load-testing the coarse database lock.
+- Production startup requires HTTPS, PostgreSQL, a valid Cloud Storage bucket, a strong session secret, valid Gemini settings when present, and either complete Microsoft credentials or none; fixtures are forbidden. Never weaken those checks to make deployment work.
+- Preserve transaction scopes and parameterized values when changing SQLite/PostgreSQL queries. Cloud Run runs one always-on instance (`--max-instances 1`, CPU not throttled, because receipt reading continues after the request); rate limits are per-process. Do not scale out without revisiting abuse limits and load-testing the coarse database lock.
 
 ## Tests and commits
 
-`npm test` runs the complete Python suite in `backend/tests/`: calculation/service golden contracts captured from Node, auth, live roles, inventory, HTTP/security, chat/SSE, Microsoft/Graph/Blob mocks, real PostgreSQL and packaged runtime startup. Build the frontend before the full suite (`npm run build`). [Migration evidence](documents/PYTHON_MIGRATION.md) records the baseline and coverage.
+`npm test` runs the complete Python suite in `backend/tests/`: calculation/service golden contracts captured from Node, auth, live roles, inventory, HTTP/security, chat/SSE, Microsoft/Graph, Cloud Storage and Gemini mocks, real PostgreSQL and packaged runtime startup. Build the frontend before the full suite (`npm run build`). [Migration evidence](documents/PYTHON_MIGRATION.md) records the baseline and coverage.
 
 Before any commit, run the whole suite. All of it must pass. Do not commit a red suite, a skipped file, or a focused `only` test.
 
 When you change calculation, stock, spend, auth, invites, roles, chat scope, delete confirmation, or an API status code, add or update a test that fails if the old bug returns. Then run the whole suite, not only the new file.
 
-Tests use temporary SQLite files and real isolated PostgreSQL databases. Install PostgreSQL binaries locally or set `PANTRY_TEST_POSTGRES_URL` to a disposable test service; the suite must fail, not skip, if unavailable. They must not open `server/data/pantry.sqlite` or use real Azure credentials. PostgreSQL tests prove engine behavior, not Azure networking/TLS. Run `npm run build` and `npm run test:browser` for client changes; the latter starts temporary FastAPI on a free loopback port and needs Playwright Chromium (or `PANTRY_BROWSER_CHANNEL=chrome`, or `msedge` on Windows).
+Tests use temporary SQLite files and real isolated PostgreSQL databases. Install PostgreSQL binaries locally or set `PANTRY_TEST_POSTGRES_URL` to a disposable test service; the suite must fail, not skip, if unavailable. They must not open `server/data/pantry.sqlite` or use real Google Cloud credentials; `conftest.py` replaces the Google token for every test. PostgreSQL tests prove engine behavior, not Cloud SQL networking. CI tests on PostgreSQL 18, the production version. Run `npm run build` and `npm run test:browser` for client changes; the latter starts temporary FastAPI on a free loopback port and needs Playwright Chromium (or `PANTRY_BROWSER_CHANNEL=chrome`, or `msedge` on Windows).
 
 A UI change is not done when the suite is green alone. Also use the screen, as the theme section says.
 
@@ -200,8 +200,8 @@ Do not commit secrets, the live database, or a generated invite password. Write 
 
 - `backend/pantry/calc.py` computes. `core.py` handles schema, time and live authorization. `accounts.py`, `inventory.py` and `conversations.py` store and authorize their own operations. `chat.py` answers and calls model tools. `passwords.py` hashes passwords/signs tokens; `identity.py` checks Microsoft claims; `entra.py` performs OIDC/PKCE and Graph calls.
 - `app.py`, `auth_routes.py`, `routes.py` and `chat_routes.py` expose HTTP and SSE. `http.py` enforces headers, cookies, rate limits and CSRF; `secret.py` handles compatible token encryption. `compat.py` preserves JavaScript numeric/text semantics where required by the existing contract.
-- `config.py` validates production settings; `database.py` provides SQLite/PostgreSQL scopes and nested transactions; `receipts.py` provides immutable local/managed-identity Blob I/O. `python -m pantry.migration` (with `PYTHONPATH=backend`) performs explicit, source-preserving migration to empty PostgreSQL. Never run execution against live data without the user's cutover authorization.
-- Root scripts are convenience/build tooling. `scripts/package_release.py` stages only Python runtime, requirements, startup and frontend assets; production does not need Node. CI tests Python 3.12, PostgreSQL and Node 24, then uploads a release artifact without deploying it.
+- `config.py` validates production settings; `database.py` provides SQLite/PostgreSQL scopes and nested transactions; `receipts.py` provides immutable local/Cloud Storage I/O; `gemini.py` holds the model endpoint, model ids and Google token. `python -m pantry.migration` (with `PYTHONPATH=backend`) performs explicit, source-preserving migration to empty PostgreSQL. Never run execution against live data without the user's cutover authorization.
+- Root scripts are convenience/build tooling. `scripts/package_release.py` stages only Python runtime, requirements, startup, `Dockerfile` and frontend assets; Cloud Build builds the Cloud Run image from that folder, and production does not need Node. Keep `startup.sh` and `Dockerfile` LF (`.gitattributes`). CI tests Python 3.12, PostgreSQL and Node 24, then uploads a release artifact without deploying it.
 - `frontend/src/screens/Dashboard.jsx` is the shell. `SignIn.jsx` is sign-in and set-password. `OfficeBar.jsx` switches offices from the sidebar. `OfficesPanel.jsx` adds an office with one or more Office Managers, renames it, and adds or removes Office Managers. There is no office delete. `AccessPanel.jsx` invites and assigns roles. `SettingsPanel.jsx` edits weekend weight and lookback. `RecordPanel.jsx` records. `PantryCharts.jsx` draws charts. `ChatPanel.jsx` is the assistant.
 - `ProductEditor.jsx` is the edit icon on a Stock row; its dialog (`Modal.jsx`) sets today's count first, then the warning days, then the name. `TodayStock.jsx` is the Today's stock dialog on Stock for counting every product in one go. Stock rows do not show who entered a product; Activity has that. `Purchases.jsx` is the Purchases page: it lists monthly purchases, previews and downloads receipts, corrects a purchase, and removes one. Hide and restore stay off screen.
 - Removals (a purchase, a role, an Office Manager, turning a person off) hide the item at once and show an Undo toast. The request is sent only when that toast closes (timeout, close button, pushed out, page hide, or sign out); Undo cancels it before anything is sent, so there is no restore route. Keep this deferred pattern rather than adding restore APIs.

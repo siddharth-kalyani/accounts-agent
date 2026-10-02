@@ -10,7 +10,7 @@ from collections import OrderedDict
 from urllib.parse import quote, unquote
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from .config import production
+from .config import production, on_cloud_run
 from .compat import loads
 from .core import HttpError
 from .accounts import person_from_access_token
@@ -74,20 +74,24 @@ def csrf_ok(header, expected):
     return bool(header and expected and hmac.compare_digest(str(header).encode(), str(expected).encode()))
 
 
+def proxy_hops():
+    # Google's front end appends the caller's address to X-Forwarded-For, so it
+    # is counted from the right; anything further left is client-supplied.
+    # Behind an added external load balancer, set PANTRY_PROXY_HOPS=2.
+    value = os.getenv("PANTRY_PROXY_HOPS", "").strip()
+    return int(value) if value.isdigit() and 1 <= int(value) <= 5 else 1
+
+
 def client_ip(request):
-    if os.getenv("WEBSITE_SITE_NAME"):
-        raw = request.headers.get("client-ip", "").strip()
-        if re.fullmatch(r"\[[^\]]+\]:\d+", raw):
-            candidate = raw[1:raw.index("]")]
-        elif re.fullmatch(r"\d+\.\d+\.\d+\.\d+:\d+", raw):
-            candidate = raw.split(":")[0]
-        else:
-            candidate = raw
-        try:
-            ipaddress.ip_address(candidate)
-            return candidate
-        except ValueError:
-            pass
+    if on_cloud_run():
+        chain = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+        if len(chain) >= proxy_hops():
+            candidate = chain[-proxy_hops()]
+            try:
+                ipaddress.ip_address(candidate)
+                return candidate
+            except ValueError:
+                pass
     address = request.client.host if request.client else "unknown"
     # Match the old opt-in loopback proxy trust; ordinary callers cannot make
     # their own X-Forwarded-For identity authoritative.

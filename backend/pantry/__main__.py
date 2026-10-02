@@ -4,7 +4,7 @@ import os
 import socket
 from dotenv import load_dotenv
 import uvicorn
-from .config import ROOT
+from .config import ROOT, on_cloud_run
 
 
 def main():
@@ -13,7 +13,8 @@ def main():
     args = parser.parse_args()
     load_dotenv(ROOT / ".env")
     os.environ.pop("NODE_TLS_REJECT_UNAUTHORIZED", None)
-    host = "0.0.0.0" if os.getenv("WEBSITE_SITE_NAME") else os.getenv("PANTRY_HOST") or "127.0.0.1"
+    # Cloud Run delivers requests to the container's network interface.
+    host = "0.0.0.0" if on_cloud_run() else os.getenv("PANTRY_HOST") or "127.0.0.1"
     port = int(os.getenv("PORT") or 8787)
     if port == 0:
         # Isolated end-to-end tests: pick a free port. uvicorn's fd= option needs AF_UNIX, which Windows lacks.

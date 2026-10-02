@@ -7,9 +7,10 @@ import asyncio
 import base64
 import html
 import json
+import logging
 import re
 import httpx
-from . import chat, inventory, receipts
+from . import gemini, inventory, receipts
 from .calc import today_in_india
 from .compat import dumps
 from .core import HttpError, live_person, log, new_id, now, require_view, require_write, scoped, stamp
@@ -27,12 +28,14 @@ SEARCH_MISS = "Search is unavailable. Leave this item unmatched."
 MAX_LINES = 40
 MAX_EDGE = 2400
 MAX_JPEG = 2 * 1024 * 1024
-MAX_OUTPUT_TOKENS = 7000
+# Gemini counts its thinking inside this limit, so leave room beyond the lines.
+MAX_OUTPUT_TOKENS = 16000
 SEARCH_URL = "https://html.duckduckgo.com/html/"
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+logger = logging.getLogger(__name__)
 
-# The free model rejects response_format. A later paid model can send this
-# same object there. Until then the shape is the submit_receipt tool.
+# The shape is the submit_receipt tool rather than response_format, so the same
+# tool-calling path also allows lookup_item before the final answer.
 # Per-line required fields stay small. Optional evidence is still accepted when
 # a receipt actually prints it; demanding every column made the small model
 # drop the selling rate and the line amount.
@@ -478,29 +481,28 @@ async def search_web(phrase):
 
 
 async def ask_model(messages, tool_choice):
-    if not chat.api_key():
+    if not gemini.configured():
         raise HttpError(503, ASSISTANT_OFF)
+    # Gemini 3 is tuned for its default temperature, so none is sent.
     payload = {
-        "model": chat.model_name(),
-        "temperature": 0.2,
+        "model": gemini.receipt_model(),
         "max_tokens": MAX_OUTPUT_TOKENS,
+        "reasoning_effort": gemini.reasoning_effort(),
         "stream": False,
         "messages": messages,
         "tools": TOOLS,
         "tool_choice": tool_choice,
-        "reasoning": {"enabled": False, "effort": "none"},
     }
     try:
         async with asyncio.timeout(60):
+            headers = await gemini.headers()
             async with httpx.AsyncClient(timeout=60) as client:
-                response = await client.post(
-                    chat.COMPLETIONS,
-                    headers={"Authorization": f"Bearer {chat.api_key()}", "Content-Type": "application/json"},
-                    json=payload,
-                )
-    except Exception:
+                response = await client.post(gemini.completions_url(), headers=headers, json=payload)
+    except Exception as error:
+        logger.warning("Receipt model call failed (%s).", type(error).__name__)
         raise HttpError(502, MODEL_FAILED) from None
     if not response.is_success:
+        logger.warning("Receipt model upstream failed (%s).", response.status_code)
         raise HttpError(502, MODEL_FAILED)
     try:
         body = response.json()
@@ -662,7 +664,7 @@ async def process(db, reading_id):
         row = await db.get("SELECT * FROM receipt_reading WHERE id = ?", reading_id)
         if not row or row["status"] != "reading":
             return
-        if not chat.api_key():
+        if not gemini.configured():
             raise HttpError(503, ASSISTANT_OFF)
         data = await receipts.read_receipt(row["blob_path"])
         images, note = await asyncio.to_thread(page_images, data, row["content_type"])

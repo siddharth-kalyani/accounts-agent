@@ -149,53 +149,137 @@ async def test_callback_state_allowlist_and_directory_same_account(db, people, m
         assert response.headers["location"].endswith("?auth=failed")
 
 
-@pytest.mark.parametrize("app_service", [False, True])
-async def test_azure_immutable_receipts_identity_headers_cleanup(monkeypatch, app_service):
-    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_URL", "https://synthetic.blob.core.windows.net")
-    monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "private-receipts")
-    if app_service:
-        monkeypatch.setenv("WEBSITE_SITE_NAME", "synthetic-test-app")
+async def test_gcs_immutable_receipts_headers_cleanup(monkeypatch, tmp_path):
+    monkeypatch.setenv("GCS_RECEIPTS_BUCKET", "synthetic-receipts")
     events, objects = [], {}
-    class Credential:
-        def __init__(self, kind): events.append(kind)
-        def close(self): events.append("credential.close")
-    monkeypatch.setattr(receipts, "ManagedIdentityCredential", lambda: Credential("managed"))
-    monkeypatch.setattr(receipts, "DefaultAzureCredential", lambda: Credential("default"))
     class Blob:
-        def __init__(self, name): self.name = name
-        def upload_blob(self, data, **kwargs):
-            assert kwargs["overwrite"] is False
-            headers = kwargs["content_settings"]
-            assert headers.content_type == "application/pdf" and headers.content_disposition == "attachment" and headers.cache_control == "no-store"
-            if self.name in objects: raise FileExistsError()
+        def __init__(self, name): self.name, self.cache_control, self.content_disposition = name, None, None
+        def upload_from_string(self, data, **kwargs):
+            assert kwargs == {"content_type": "application/pdf", "if_generation_match": 0, "timeout": 20}
+            assert self.cache_control == "no-store" and self.content_disposition == "attachment"
+            if self.name in objects: raise receipts.PreconditionFailed("exists")
             objects[self.name] = data
-        def download_blob(self, **kwargs): return self
-        def readall(self): return objects[self.name]
+        def download_as_bytes(self, **kwargs): return objects[self.name]
+    class Bucket:
+        def __init__(self, name): assert name == "synthetic-receipts"
+        def blob(self, name): return Blob(name)
     class Client:
-        def __init__(self, url, **kwargs): assert url == os.environ["AZURE_STORAGE_ACCOUNT_URL"]
-        def get_blob_client(self, container, name):
-            assert container == "private-receipts"
-            return Blob(name)
+        def bucket(self, name): return Bucket(name)
         def close(self): events.append("client.close")
-    monkeypatch.setattr(receipts, "BlobServiceClient", Client)
+    monkeypatch.setattr(receipts, "_gcs_client", Client)
     await receipts.store_receipt("one.pdf", b"%PDF-test", "application/pdf")
     assert await receipts.read_receipt("one.pdf") == b"%PDF-test"
     with pytest.raises(FileExistsError):
         await receipts.store_receipt("one.pdf", b"replace", "application/pdf")
-    assert events == (["managed" if app_service else "default", "client.close", "credential.close"] * 3)
+    assert objects == {"one.pdf": b"%PDF-test"} and events == ["client.close"] * 3
+    assert not (tmp_path / "data" / "receipts").exists()
     with pytest.raises(ValueError): await receipts.read_receipt("../one.pdf")
 
 
-def production_settings(monkeypatch):
-    for k, v in {"APP_ENV": "production", "APP_ORIGIN": "https://pantry.example.com", "SESSION_SECRET": "synthetic-production-secret-" * 3, "DATABASE_URL": "postgresql://synthetic:local@localhost/pantry", "AZURE_STORAGE_ACCOUNT_URL": "https://synthetic.blob.core.windows.net", "ENTRA_TENANT_ID": TENANT, "ENTRA_CLIENT_ID": CLIENT, "SEED_SUPERADMIN_OBJECT_ID": OBJECT, "ENTRA_CLIENT_SECRET": "synthetic-client-secret", "ENTRA_REDIRECT_URI": "https://pantry.example.com/api/auth/callback"}.items(): monkeypatch.setenv(k, v)
+def production_settings(monkeypatch, microsoft=True):
+    for k, v in {"APP_ENV": "production", "APP_ORIGIN": "https://pantry.example.com", "SESSION_SECRET": "synthetic-production-secret-" * 3, "DATABASE_URL": "postgresql://synthetic:local@localhost/pantry", "GCS_RECEIPTS_BUCKET": "synthetic-receipts"}.items(): monkeypatch.setenv(k, v)
+    if microsoft:
+        for k, v in {"ENTRA_TENANT_ID": TENANT, "ENTRA_CLIENT_ID": CLIENT, "SEED_SUPERADMIN_OBJECT_ID": OBJECT, "ENTRA_CLIENT_SECRET": "synthetic-client-secret", "ENTRA_REDIRECT_URI": "https://pantry.example.com/api/auth/callback"}.items(): monkeypatch.setenv(k, v)
 
 
-@pytest.mark.parametrize("key,value", [("APP_ORIGIN", "http://pantry.example.com"), ("APP_ORIGIN", "https://pantry.example.com/path"), ("SESSION_SECRET", "short"), ("SESSION_SECRET", "@Microsoft.KeyVault(SecretUri=unresolved)"), ("PANTRY_SEED", "fixtures"), ("DATABASE_URL", "sqlite:///file"), ("AZURE_STORAGE_ACCOUNT_URL", "http://invalid"), ("ENTRA_CLIENT_ID", "not-a-uuid"), ("ENTRA_TENANT_ID", ""), ("SEED_SUPERADMIN_OBJECT_ID", ""), ("ENTRA_CLIENT_SECRET", "short"), ("ENTRA_REDIRECT_URI", "https://elsewhere.example/api/auth/callback")])
+@pytest.mark.parametrize("key,value", [("APP_ORIGIN", "http://pantry.example.com"), ("APP_ORIGIN", "https://pantry.example.com/path"), ("SESSION_SECRET", "short"), ("PANTRY_SEED", "fixtures"), ("DATABASE_URL", "sqlite:///file"), ("GCS_RECEIPTS_BUCKET", ""), ("GCS_RECEIPTS_BUCKET", "Not_A_Bucket!"), ("VERTEX_LOCATION", "asia-south1"), ("ENTRA_CLIENT_ID", "not-a-uuid"), ("ENTRA_TENANT_ID", ""), ("SEED_SUPERADMIN_OBJECT_ID", ""), ("ENTRA_CLIENT_SECRET", "short"), ("ENTRA_REDIRECT_URI", "https://elsewhere.example/api/auth/callback")])
 def test_production_fails_closed(monkeypatch, key, value):
     production_settings(monkeypatch)
     config.validate_production_config()
     monkeypatch.setenv(key, value)
     with pytest.raises(ValueError): config.validate_production_config()
+
+
+def test_production_password_only_and_gemini_settings(monkeypatch):
+    production_settings(monkeypatch, microsoft=False)
+    config.validate_production_config()
+    for k, v in {"VERTEX_PROJECT": "synthetic-project", "VERTEX_LOCATION": "asia-south1", "GEMINI_CHAT_MODEL": "gemini-3.1-flash-lite", "GEMINI_RECEIPT_MODEL": "google/gemini-3.8-flash"}.items(): monkeypatch.setenv(k, v)
+    config.validate_production_config()
+    monkeypatch.setenv("GEMINI_RECEIPT_MODEL", "../other")
+    with pytest.raises(ValueError): config.validate_production_config()
+    monkeypatch.delenv("GEMINI_RECEIPT_MODEL")
+    # Half a Microsoft configuration is refused rather than silently ignored.
+    monkeypatch.setenv("ENTRA_CLIENT_ID", CLIENT)
+    with pytest.raises(ValueError): config.validate_production_config()
+
+
+FIRST = "Siddharth.Kalyani@intuitive.AI"
+
+
+async def test_bootstrap_password_is_a_one_time_first_sign_in(tmp_path, monkeypatch):
+    # Padding around the stored secret is ignored; this value also meets the
+    # chosen-password rules, so reusing it reaches the "different" check.
+    monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", " Synthetic Bootstrap 1234\n")
+    db = await c.open_database(tmp_path / "fresh.sqlite", seed="production")
+    try:
+        setup = await a.login_with_password(db, FIRST, "Synthetic Bootstrap 1234")
+        assert setup["next"] == "setup" and setup["email"] == FIRST
+        with fails(422, "different from the invite"):
+            await a.complete_password_setup(db, setup["setupToken"], "Synthetic Bootstrap 1234", "Synthetic Bootstrap 1234")
+        assert (await a.complete_password_setup(db, setup["setupToken"], "Pantry Door 19", "Pantry Door 19"))["next"] == "app"
+        grants = await db.all("SELECT role FROM role_grant WHERE deleted_at IS NULL")
+        assert [g["role"] for g in grants] == ["super_admin"]
+        # Restarting with the old or a new secret never resets a chosen password.
+        for value in ("Synthetic Bootstrap 1234", "another-synthetic-bootstrap"):
+            monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", value)
+            async with db.scope():
+                await c.seed_production(db)
+            with fails(401):
+                await a.login_with_password(db, FIRST, value)
+        assert (await a.login_with_password(db, FIRST, "Pantry Door 19"))["next"] == "app"
+    finally:
+        await db.close()
+
+
+async def test_bootstrap_rearms_only_an_untouched_fresh_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", "synthetic-bootstrap-1234")
+    db = await c.open_database(tmp_path / "fresh.sqlite", seed="production")
+    token = c.set_clock(lambda: c.parse_stamp("2026-09-28T06:30:00.000Z"))
+    try:
+        with fails(401, "expired"):
+            await a.login_with_password(db, FIRST, "synthetic-bootstrap-1234")
+        async with db.scope():
+            await c.seed_production(db)
+        assert (await a.login_with_password(db, FIRST, "synthetic-bootstrap-1234"))["next"] == "setup"
+        monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", "replacement-synthetic-bootstrap")
+        async with db.scope():
+            await c.seed_production(db)
+        with fails(401):
+            await a.login_with_password(db, FIRST, "synthetic-bootstrap-1234")
+        assert (await a.login_with_password(db, FIRST, "replacement-synthetic-bootstrap"))["next"] == "setup"
+        # Once anyone else exists, the deployment secret changes nothing.
+        await db.run("INSERT INTO person (id, sign_in_name, display_name, active) VALUES (?, ?, ?, 1)", c.new_id(), "someone.else@intuitive.AI", "Someone Else")
+        monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", "third-synthetic-bootstrap")
+        async with db.scope():
+            await c.seed_production(db)
+        with fails(401):
+            await a.login_with_password(db, FIRST, "third-synthetic-bootstrap")
+    finally:
+        c._clock.reset(token)
+        await db.close()
+
+
+async def test_password_only_production_needs_a_bootstrap_on_first_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    with pytest.raises(ValueError, match="BOOTSTRAP_SUPERADMIN_PASSWORD"):
+        await c.open_database(tmp_path / "first.sqlite", seed="production")
+    monkeypatch.setenv("BOOTSTRAP_SUPERADMIN_PASSWORD", "too-short")
+    with pytest.raises(ValueError, match="16 to 128"):
+        await c.open_database(tmp_path / "second.sqlite", seed="production")
+
+
+async def test_cloud_sql_socket_url_keeps_socket_and_credentials():
+    from psycopg.conninfo import conninfo_to_dict
+    from pantry.database import Database
+    db = Database(url="postgresql://inventory-agent-user:p%40ss%3Aword@/inventory-db?host=/cloudsql/synthetic-project:asia-south1:inventory-agent")
+    try:
+        info = conninfo_to_dict(db.pool.conninfo)
+        assert info["host"] == "/cloudsql/synthetic-project:asia-south1:inventory-agent"
+        assert (info["dbname"], info["user"], info["password"]) == ("inventory-db", "inventory-agent-user", "p@ss:word")
+        # libpq ignores sslmode on a Unix socket; Cloud Run's connector encrypts the hop.
+        assert info["sslmode"] == "verify-full" and info["connect_timeout"] == "10"
+    finally:
+        await db.close()
 
 
 def test_local_secret_persists_and_existing_data_path_is_preserved(tmp_path, monkeypatch):

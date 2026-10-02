@@ -26,7 +26,7 @@ h.RateLimiter.check = _test_check
 
 async def main():
     with tempfile.TemporaryDirectory(prefix="pantry-browser-") as folder:
-        for key in ("APP_ENV", "NODE_ENV", "PANTRY_SEED", "PANTRY_DB", "DATABASE_URL", "WEBSITE_SITE_NAME", "PANTRY_TRUST_PROXY", "AZURE_STORAGE_ACCOUNT_URL", "TOKENROUTER_API_KEY", "OPENROUTER_API_KEY", "ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "SEED_SUPERADMIN_OBJECT_ID"):
+        for key in ("APP_ENV", "NODE_ENV", "PANTRY_SEED", "PANTRY_DB", "DATABASE_URL", "K_SERVICE", "PANTRY_TRUST_PROXY", "PANTRY_PROXY_HOPS", "GCS_RECEIPTS_BUCKET", "VERTEX_PROJECT", "VERTEX_LOCATION", "BOOTSTRAP_SUPERADMIN_PASSWORD", "ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "SEED_SUPERADMIN_OBJECT_ID"):
             os.environ.pop(key, None)
         os.environ["SESSION_SECRET"] = "local-test-secret-never-use-in-a-real-deployment-42"
         os.environ["PANTRY_DATA_DIR"] = folder

@@ -2,7 +2,7 @@
 
 ## Release status
 
-Application changes and local verification are complete for the approved scope. This is **ready for Azure staging validation, not an assertion that an unconfigured Azure deployment is production-ready**. No cloud resources were provisioned, no real Microsoft authorization flow was exercised, and no live data was migrated during this review.
+Application changes and local verification are complete for the approved scope. This review was written for Azure; the owner has since moved hosting to Google Cloud only (Cloud Run, Cloud SQL for PostgreSQL 18, Cloud Storage, Secret Manager, Gemini) with email and password sign-in for the first deployment. Azure and TokenRouter code was removed. Findings below stay as recorded; the open risks and release gates are updated for Google Cloud. This is **ready for Google Cloud staging validation, not an assertion that the deployment is production-ready**. See [GCP deployment](GCP_DEPLOYMENT.md).
 
 The original BRD is unchanged. Product hiding was explicitly excluded by the owner; product editing and receipt retrieval were approved and added. Existing forecasting, charts and the pantry assistant remain in place. The repository's deliberate role policy remains: Admin is read-only across all offices; Office Manager writes only assigned offices.
 
@@ -19,7 +19,7 @@ The original BRD is unchanged. Product hiding was explicitly excluded by the own
 | Activity and historical records | Attributed operations and soft-deletion behavior retained. No hard-delete UI added. |
 | Identity and roles | Invited `@intuitive.AI` members only. Microsoft tenant/audience/issuer/object identity checks; production rejects missing or guest account-type claims. Local passwords remain allowed without MFA. |
 | Persistent sessions | Rotating HttpOnly cookies; 90-day inactivity and 180-day absolute limits. Two-tab refresh coordination, stable family CSRF, server revocation and replay detection. |
-| Availability and performance targets | Not yet demonstrated on Azure. BRD targets include 99.5% office-hours availability, dashboard p95 below 2 seconds, saves below 1 second, and assistant replies below 8 seconds. Measure in staging. A free external AI provider cannot be assumed to satisfy its target. |
+| Availability and performance targets | Not yet demonstrated on Google Cloud. BRD targets include 99.5% office-hours availability, dashboard p95 below 2 seconds, saves below 1 second, and assistant replies below 8 seconds. Measure in staging, including Gemini reply time. |
 
 ## Confirmed issues fixed
 
@@ -51,24 +51,24 @@ The review also added fail-closed production configuration, generic unexpected e
 
 All 28 frontend source/asset files remain byte-for-byte identical after moving to `frontend/`. Existing local data stays in place; existing Node credentials, refresh families and pending setup tickets are tested across Python database reopen. GitHub workflow changes are validated locally; hosted CI runs after pushing.
 
-All automated data is disposable. Azure TLS/network/firewall/managed identity and a real Entra sign-in still require the deployment checklist.
+All automated data is disposable. Cloud SQL connectivity, the service account's access to the bucket and Gemini, and the real Gemini endpoint's handling of forced and streamed tool calls still require the deployment checklist. On Cloud Run the client address comes from the last `X-Forwarded-For` entry Google appends; confirm in staging.
 
 ## Accepted risks and operational gaps
 
 1. **Local password login has no MFA**, as explicitly requested. An attacker with that password can log in despite Microsoft MFA. Use unique password-manager-generated passwords and tightly control Super Admin grants.
 2. **Long-lived sessions on personal devices** increase exposure if a device/browser is stolen or compromised. The app cannot prevent a malicious browser extension or OS from using an authenticated session. Browser cookie deletion or unsupported cross-tab locking can cause earlier sign-in.
 3. **Offboarding must disable the person in this app**, not only in Entra. Existing app sessions and the independent local password are not continuously revalidated against Microsoft account status. Disable immediately; it revokes all app sessions and setup tickets.
-4. **Password recovery/change is explicitly deferred by the owner.** An already-set local password has no reset screen in this release; Microsoft sign-in remains an alternative. Do not improvise direct database edits. Keep a compromised local account disabled until credentials are safely replaced. The planned follow-up is listed below.
-5. **Receipts are type/size checked, not malware-scanned.** They download as attachments. Consider Defender for Storage and an actual quarantine/release integration if company policy requires scanning; merely enabling an alert is not a download gate.
-6. **External AI is optional.** Leave the key unset until the company approves its data processing. The provider can receive the caller's display name/email, authorized pantry context and chat text. It is not Azure-hosted merely because the app is. No spending hard cap or provider availability commitment is implemented.
+4. **Password recovery/change is explicitly deferred by the owner.** An already-set local password has no reset screen in this release. While Microsoft sign-in is off, nothing else recovers a forgotten password, so keep at least two active Super Admins. Do not improvise direct database edits. Keep a compromised local account disabled until credentials are safely replaced. The planned follow-up is listed below.
+5. **Receipts are type/size checked, not malware-scanned.** They download as attachments. Add an actual quarantine/release scan if company policy requires scanning; merely enabling an alert is not a download gate.
+6. **The assistant uses Gemini in the company's Google Cloud project.** Gemini receives the caller's display name/email, authorized pantry context, chat text and receipt images. With a regional `VERTEX_LOCATION` processing stays in that region; `global` does not. No spending hard cap is implemented; set a billing budget alert.
 7. **One app instance initially.** IP/chat rate limits are in memory and reset on restart. Database authorization/refresh serialization works across instances, but multi-instance abuse quotas need shared storage or an upstream limit before scaling out. The database lock is intentionally coarse for this small workload; measure real load before increasing concurrency.
-8. **Audit history is application-level**, not cryptographically tamper-proof against a database administrator. Backups, restricted Azure roles and protected logs are operational requirements. Authentication tokens, chat history and audit records need an agreed retention policy; no business-record cleanup job is enabled automatically.
+8. **Audit history is application-level**, not cryptographically tamper-proof against a database administrator. Backups, restricted Google Cloud roles and protected logs are operational requirements. Authentication tokens, chat history and audit records need an agreed retention policy; no business-record cleanup job is enabled automatically.
 
 ## Release gates still owned by deployment
 
 - Choose an approved region, budget, recovery window and operational owner; no region or bill was assumed.
-- Complete [Azure deployment](AZURE_DEPLOYMENT.md), including private database/storage access, identity/RBAC, secret resolution, HTTPS, backups and alerts.
-- Test real Microsoft member, guest, uninvited, disabled and wrong-tenant scenarios; verify the `acct` claim is present.
+- Complete [GCP deployment](GCP_DEPLOYMENT.md), including the service account's roles, secrets, HTTPS address, backups and budget alerts. Sign in with the one-time password, choose a new one, then remove that secret.
+- When Microsoft sign-in is turned on later: test real member, guest, uninvited, disabled and wrong-tenant scenarios and verify the `acct` claim is present.
 - Test a restart/redeployment with the same secrets and database; signed-in users should remain signed in.
 - Rehearse migration on a copy, then test a database-and-receipt restore. Record measured recovery time and acceptable data loss.
 - Test at 20 concurrent users and realistic receipt sizes; validate the BRD performance targets instead of assuming them.

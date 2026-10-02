@@ -1,16 +1,27 @@
 import os
 from pathlib import Path
 import pytest
-from pantry import core, accounts, inventory
+from pantry import core, accounts, inventory, gemini
+
+ISOLATED_SETTINGS = ("APP_ENV", "NODE_ENV", "PANTRY_SEED", "PANTRY_DB", "DATABASE_URL", "K_SERVICE", "PANTRY_TRUST_PROXY", "PANTRY_PROXY_HOPS", "GCS_RECEIPTS_BUCKET", "VERTEX_PROJECT", "VERTEX_LOCATION", "GEMINI_CHAT_MODEL", "GEMINI_RECEIPT_MODEL", "GEMINI_REASONING_EFFORT", "BOOTSTRAP_SUPERADMIN_PASSWORD", "SEED_SUPERADMIN_EMAIL", "SEED_SUPERADMIN_NAME", "ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI", "SEED_SUPERADMIN_OBJECT_ID")
+REAL_GOOGLE_TOKEN = gemini._token
+
+
+def switch_on_gemini(monkeypatch):
+    monkeypatch.setenv("VERTEX_PROJECT", "synthetic-project")
+    monkeypatch.setenv("VERTEX_LOCATION", "asia-south1")
 
 
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch, tmp_path):
-    for name in ("APP_ENV", "NODE_ENV", "PANTRY_SEED", "PANTRY_DB", "DATABASE_URL", "WEBSITE_SITE_NAME", "PANTRY_TRUST_PROXY", "AZURE_STORAGE_ACCOUNT_URL", "AZURE_STORAGE_CONTAINER", "TOKENROUTER_API_KEY", "OPENROUTER_API_KEY", "ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI", "SEED_SUPERADMIN_OBJECT_ID"):
+    for name in ISOLATED_SETTINGS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "local-test-secret-never-use-in-a-real-deployment-42")
     monkeypatch.setenv("PANTRY_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("APP_ORIGIN", "http://127.0.0.1:5173")
+    # Tests never reach real Google credentials.
+    monkeypatch.setattr(gemini, "_token", lambda: "synthetic-google-token")
+    monkeypatch.setattr(gemini, "_credentials", None)
     token = core.set_clock(lambda: core.parse_stamp("2026-09-20T06:30:00.000Z"))
     yield
     core._clock.reset(token)

@@ -2,6 +2,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 export PYTHONPATH="$PWD/backend${PYTHONPATH:+:$PYTHONPATH}"
-# The built-in App Service Python container routes traffic to port 8000.
+# Cloud Run sets PORT (8080); 8000 is only a fallback for other hosts.
 export PORT="${PORT:-8000}"
 exec python -m pantry
