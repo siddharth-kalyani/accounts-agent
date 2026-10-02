@@ -63,7 +63,7 @@ That is a Unix socket that Cloud Run provides; its connector encrypts the hop to
 
 Keep `session-secret` stable. Changing it signs everyone out.
 
-6. In Agent Platform, open both models once (Model Garden or Studio), accept any terms and confirm a test prompt works in `REGION`. Regional endpoints cost about 10% more than `global` for Gemini 3 models; `global` gives no control over where a request is processed.
+6. In Agent Platform, open both models once (Model Garden or Studio), accept any terms and confirm a test prompt works on the `global` endpoint. Use `VERTEX_LOCATION=global`: the `asia-south1` endpoint answered 404 for the chat model, and the assistant failed until the service was switched to `global`. `global` also costs about 10% less than a regional endpoint, but gives no control over where a request is processed; pantry data still stays in `REGION`.
 
 ## 3. Build the release (on the development PC)
 
@@ -93,7 +93,7 @@ gcloud run deploy SERVICE --source release --region REGION \
   --service-account RUN_SA \
   --add-cloudsql-instances INSTANCE \
   --set-secrets "SESSION_SECRET=session-secret:latest,DATABASE_URL=DB_URL_SECRET:latest,BOOTSTRAP_SUPERADMIN_PASSWORD=bootstrap-admin-password:latest" \
-  --set-env-vars "APP_ENV=production,APP_ORIGIN=https://SERVICE-PROJECT_NUMBER.REGION.run.app,GCS_RECEIPTS_BUCKET=BUCKET,VERTEX_PROJECT=PROJECT_ID,VERTEX_LOCATION=REGION,GEMINI_CHAT_MODEL=gemini-3.1-flash-lite,GEMINI_RECEIPT_MODEL=gemini-3.8-flash" \
+  --set-env-vars "APP_ENV=production,APP_ORIGIN=https://SERVICE-PROJECT_NUMBER.REGION.run.app,GCS_RECEIPTS_BUCKET=BUCKET,VERTEX_PROJECT=PROJECT_ID,VERTEX_LOCATION=global,GEMINI_CHAT_MODEL=gemini-3.1-flash-lite,GEMINI_RECEIPT_MODEL=gemini-3.8-flash" \
   --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --cpu 1 --memory 1Gi --timeout 300 \
   --allow-unauthenticated
@@ -122,15 +122,69 @@ If the seven days pass before anyone signs in, restart the service with the secr
 
 Then invite at least one more trusted Super Admin from Access, so the pantry never depends on one account.
 
-## 6. Later releases
+## 6. Later releases: automatic from `main`
 
-Package again (section 3), upload, extract, and run only:
+Every push to `main` runs the `verify` job in `.github/workflows/checks.yml`. When it passes, the `deploy` job takes that job's `release/` artifact, builds the image on the GitHub runner, pushes it to the Artifact Registry repository `inventory-agent` (tagged with the commit SHA) and deploys it to the `inventory-agent` service with `--image` only. Settings and secrets on the service are never changed by a deploy; change them with `gcloud run services update ... --update-env-vars` (never `--set-env-vars`, which replaces the whole list). Branches and pull requests run the checks but never deploy. Work on a branch and merge to `main` to release.
+
+Cloud Run starts the new revision beside the old one and moves traffic only after it is healthy, so the site stays up. A new revision that fails to start gets no traffic. Each deploy restarts the app, so a receipt being read at that moment can be cut off and must be uploaded again. The new revision upgrades the database schema at start while the old one is still serving.
+
+GitHub signs in with Workload Identity Federation: a short-lived Google token, no JSON key. It is accepted only for `siddharth-kalyani/accounts-agent` on `refs/heads/main`, as the `inventory-deployer` service account, which can only push to the `inventory-agent` repository, deploy the `inventory-agent` service, and run it as `inventory-run`.
+
+One-time set-up in Cloud Shell, with the project selected. It first checks that each name is free or already belongs to this app, stops otherwise, creates only what is missing and only adds IAM bindings:
 
 ```sh
-gcloud run deploy SERVICE --source release --region REGION
+bash <<'EOF'
+set -euo pipefail
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+[ -n "$PROJECT_ID" ] || { echo "Select the project first: gcloud config set project PROJECT_ID"; exit 1; }
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+REGION=asia-south1; SERVICE=inventory-agent; REPOSITORY=inventory-agent
+RUN_SA="inventory-run@$PROJECT_ID.iam.gserviceaccount.com"
+DEPLOY_SA="inventory-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+POOL=inventory-agent-github; PROVIDER=github; GITHUB_REPO=siddharth-kalyani/accounts-agent
+LABEL="inventory-agent GitHub deploys"
+echo "Project $PROJECT_ID"
+
+# Read-only checks first.
+gcloud run services describe "$SERVICE" --region "$REGION" --format='value(metadata.name)'
+gcloud iam service-accounts describe "$RUN_SA" --format='value(email)'
+repo=$(gcloud artifacts repositories describe "$REPOSITORY" --location "$REGION" --format='value(format)' 2>/dev/null || true)
+[ -z "$repo" ] || [ "$repo" = DOCKER ] || { echo "Repository $REPOSITORY exists and is not Docker. Stopped."; exit 1; }
+account=$(gcloud iam service-accounts describe "$DEPLOY_SA" --format='value(displayName)' 2>/dev/null || true)
+[ -z "$account" ] || [ "$account" = "$LABEL" ] || { echo "$DEPLOY_SA belongs to something else. Stopped."; exit 1; }
+pool=$(gcloud iam workload-identity-pools describe "$POOL" --location global --format='csv[no-heading](displayName,state)' 2>/dev/null || true)
+[ -z "$pool" ] || [ "$pool" = "$LABEL,ACTIVE" ] || { echo "Pool $POOL exists and is not ours or not active. Stopped."; exit 1; }
+provider=""
+[ -z "$pool" ] || provider=$(gcloud iam workload-identity-pools providers describe "$PROVIDER" --location global --workload-identity-pool "$POOL" --format='value(state)' 2>/dev/null || true)
+[ -z "$provider" ] || [ "$provider" = ACTIVE ] || { echo "Provider $PROVIDER is $provider. Stopped."; exit 1; }
+
+# Create only what is missing.
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com artifactregistry.googleapis.com
+[ -n "$repo" ] || gcloud artifacts repositories create "$REPOSITORY" --location "$REGION" --repository-format docker --description "$LABEL"
+if [ -z "$account" ]; then gcloud iam service-accounts create inventory-deployer --display-name "$LABEL"; sleep 15; fi
+[ -n "$pool" ] || gcloud iam workload-identity-pools create "$POOL" --location global --display-name "$LABEL"
+[ -n "$provider" ] || gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --location global --workload-identity-pool "$POOL" \
+  --display-name GitHub --issuer-uri https://token.actions.githubusercontent.com \
+  --attribute-mapping 'google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref' \
+  --attribute-condition "assertion.repository == '$GITHUB_REPO' && assertion.ref == 'refs/heads/main'"
+
+# Add bindings on our own resources only.
+gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" --role roles/iam.workloadIdentityUser --format none \
+  --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository/$GITHUB_REPO"
+gcloud iam service-accounts add-iam-policy-binding "$RUN_SA" --role roles/iam.serviceAccountUser --member "serviceAccount:$DEPLOY_SA" --format none
+gcloud artifacts repositories add-iam-policy-binding "$REPOSITORY" --location "$REGION" --role roles/artifactregistry.writer --member "serviceAccount:$DEPLOY_SA" --format none
+gcloud run services add-iam-policy-binding "$SERVICE" --region "$REGION" --role roles/run.developer --member "serviceAccount:$DEPLOY_SA" --format none
+
+echo; echo "Add these in GitHub as repository variables:"
+echo "GCP_PROJECT_ID=$PROJECT_ID"
+echo "GCP_WORKLOAD_IDENTITY_PROVIDER=projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
+echo "GCP_DEPLOY_SERVICE_ACCOUNT=$DEPLOY_SA"
+EOF
 ```
 
-Settings not named on the command line are kept. Each deploy restarts the single instance, so release at a quiet time.
+Then in GitHub open the repository → Settings → Secrets and variables → Actions → **Variables** and add the three values it prints. They are identifiers, not secrets. Until they exist the deploy job fails with a message naming them; after adding them, re-run that job from the Actions tab. If an organization policy refuses the pool or the `principalSet` member, send the exact message to the project administrator rather than using a service account key.
+
+To deploy by hand without GitHub (for example while GitHub is down), package as in section 3 and run `gcloud run deploy SERVICE --source release --region REGION` in Cloud Shell.
 
 ## 7. Staging checks before people rely on it
 
@@ -145,7 +199,7 @@ Settings not named on the command line are kept. Each deploy restarts the single
 ## 8. Operations and recovery
 
 - Cloud SQL backups and point-in-time recovery cover the database; bucket versioning and soft delete cover receipts. Database backups do not include receipt files. A point-in-time restore creates a new instance: rehearse it once into a separate instance and point a test service at it.
-- For a bad code release, deploy the previous `release.tar.gz` again. Do not restore the database to roll back code.
+- For a bad code release, send traffic back to the previous revision: `gcloud run revisions list --service SERVICE --region REGION`, then `gcloud run services update-traffic SERVICE --region REGION --to-revisions REVISION=100`. Fix on a branch and merge; the next deploy moves traffic to the newest revision again. Reverting the commit on `main` also redeploys the older code. Do not restore the database to roll back code.
 - When someone leaves, a Super Admin turns them off in the app immediately; that revokes every session.
 - Keep two active Super Admins. Do not raise `--max-instances` without replacing the per-process rate limits and load-testing the database lock.
 - Model ids retire: `GEMINI_CHAT_MODEL` and `GEMINI_RECEIPT_MODEL` can be changed with `gcloud run services update SERVICE --region REGION --update-env-vars GEMINI_CHAT_MODEL=...` and need no code change. Gemini 3.8 Flash has introductory pricing until 31 December 2026.

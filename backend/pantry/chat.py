@@ -22,6 +22,9 @@ PRODUCT_NAMES = ["coffee", "milk", "sugar", "tea", "sticks"]
 READ = r"\b(left|on hand|run out|runs out|running out|how much|how many|when|spend|spent|burn|due|forecast|expected)\b"
 MONTHS = [calendar.month_name[i].lower() for i in range(1, 13)]
 logger = logging.getLogger(__name__)
+OFF_TOPIC = "I can only answer questions about your inventory: stock on hand, purchases, counts, spend, burn rate, and when a product is expected to run out."
+# A message made only of these phrases is a greeting and is answered without the model.
+SMALL_TALK = r"\b(hi+|hello|hey|hiya|namaste|good (morning|afternoon|evening|day)|how are (you|u)( doing)?( today)?|how'?s it going|how do you do|what'?s up|sup|thanks|thank you|thx|there|assistant)\b"
 
 
 def matches(pattern, text):
@@ -91,10 +94,19 @@ def scope_reply(text):
     if matches(r"\breceipt\b", lower) and matches(r"\b(delete|remove|erase)\b", lower):
         return "The assistant cannot remove a receipt on its own."
     stock = matches(r"\b(coffee|milk|sugar|tea|sticks|pack|stock|burn|purchase|count|spend|on hand|run out|reorder|receipt|pantry)\b", lower)
-    elsewhere = matches(r"\b(weather|rain|snow|joke|poem|lyrics|bitcoin|crypto|football|cricket|movie|recipe|president|capital of)\b", lower)
+    elsewhere = matches(r"\b(weather|temperature|humidity|climate|rain|snow|news|joke|poem|song|lyrics|bitcoin|crypto|share price|sports?|football|cricket|movie|recipe|horoscope|translate|president|prime minister|capital of)\b", lower)
     if elsewhere and not stock:
-        return "I only answer questions about this pantry: stock on hand, purchases, counts, spend, burn rate, and when a product is expected to run out."
+        return OFF_TOPIC
     return ""
+
+
+def small_talk_reply(text):
+    words = re.sub(r"[^a-z' ]+", " ", js_text(text or "").lower())
+    if not words.strip() or re.sub(SMALL_TALK, " ", words).strip():
+        return ""
+    if matches(r"\b(thanks|thank you|thx)\b", words):
+        return "You're welcome. What else can I help you with in your inventory?"
+    return "I'm good, thanks. What can I help you with in your inventory?"
 
 
 def visible(value):
@@ -416,7 +428,7 @@ async def converse_in_thread(db, person, history, message, *, on_delta=None, on_
         return await deliver(response(f"{lead} {saved['summary']}", saved=True))
     if len(pending) > 1 and yes:
         return await deliver(response("More than one card is waiting. Confirm the one you want on screen.", [present_proposal(p) for p in pending]))
-    blocked = scope_reply(text)
+    blocked = scope_reply(text) or small_talk_reply(text)
     if blocked:
         return await deliver(response(blocked))
     deletion = await delete_reply(db, person, text, history, context_office_id)

@@ -70,6 +70,20 @@ async def test_factual_followup_and_temporary_closure_do_not_call_model(db, peop
     assert await inv.get_pantry(db, people["manager"], offices["Ahmedabad"]) == pantry
 
 
+async def test_greetings_and_off_topic_questions_do_not_call_model(db, people, offices, monkeypatch):
+    async def no_model(*args):
+        raise AssertionError("A greeting or off-topic question must not call the provider")
+    monkeypatch.setattr(chat, "complete", no_model)
+    switch_on_gemini(monkeypatch)
+    for message in ("How are you?", "hi", "Hello there!", "Hi, how are you doing today?", "good morning"):
+        assert (await chat.converse(db, people["manager"], [], message))["reply"] == "I'm good, thanks. What can I help you with in your inventory?"
+    assert "You're welcome" in (await chat.converse(db, people["manager"], [], "thanks!"))["reply"]
+    for message in ("What is temperature today", "what is the weather in Pune", "tell me a joke", "latest news"):
+        assert (await chat.converse(db, people["manager"], [], message))["reply"] == chat.OFF_TOPIC
+    assert chat.small_talk_reply("hi, how much coffee is left?") == ""
+    assert chat.scope_reply("what is the temperature of the milk stock") == ""
+
+
 async def test_model_tool_loop_prepares_then_confirms_and_suppresses_premature_saved_claim(db, people, offices, monkeypatch):
     switch_on_gemini(monkeypatch)
     calls = []

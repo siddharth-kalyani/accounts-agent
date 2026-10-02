@@ -61926,7 +61926,7 @@
     },
     {
       "message": "what is the weather",
-      "scope": "I only answer questions about this pantry: stock on hand, purchases, counts, spend, burn rate, and when a product is expected to run out.",
+      "scope": "I can only answer questions about your inventory: stock on hand, purchases, counts, spend, burn rate, and when a product is expected to run out.",
       "factual": ""
     },
     {

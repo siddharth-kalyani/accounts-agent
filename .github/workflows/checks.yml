@@ -58,3 +58,65 @@ jobs:
           path: release/
           if-no-files-found: error
           retention-days: 14
+
+  # Every push to main that passes verify ships to the Cloud Run service.
+  # It changes only the image: settings and secrets stay as set on the service.
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REGION: asia-south1
+      SERVICE: inventory-agent
+      REPOSITORY: inventory-agent
+    steps:
+      - name: Check deploy settings
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$PROJECT" ] || [ -z "$PROVIDER" ] || [ -z "$ACCOUNT" ]; then
+            echo "::error::Set the repository variables GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_DEPLOY_SERVICE_ACCOUNT (documents/GCP_DEPLOYMENT.md, section 6), then re-run this job."
+            exit 1
+          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pantry-python-release
+          path: release
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Build and push the image
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPOSITORY/$SERVICE:$GITHUB_SHA"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build --pull -t "$IMAGE" release
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" --image "$IMAGE" --region "$REGION" --quiet
+          # A rollback pins traffic to an old revision; the next push to main takes it back.
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-latest --quiet
+      - name: Check health
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS "$URL/api/health"; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::$URL/api/health did not answer after the deploy."
+          exit 1

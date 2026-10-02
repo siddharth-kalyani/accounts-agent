@@ -16,7 +16,7 @@ backend/pantry/       FastAPI application, services, calculations and SQL schema
 backend/tests/        Python contracts, HTTP, database and integration tests
 backend/requirements* Pinned Python runtime and development dependencies
 scripts/              Local launchers, release packaging and baseline capture
-.github/workflows/    Python + frontend checks and release artifact
+.github/workflows/    Checks on every push; main deploys to Cloud Run
 ```
 
 The root npm workspace only coordinates frontend tooling and Python launchers. Node is not needed to run a built production release.
@@ -49,7 +49,7 @@ FastAPI serves `frontend/dist` and `/api`. Set `APP_ORIGIN` and the Microsoft ca
 
 ## Verify changes
 
-The complete suite requires PostgreSQL. Install local PostgreSQL binaries (`initdb`, `pg_ctl`; Postgres.app is also detected on macOS), or set `PANTRY_TEST_POSTGRES_URL` to a **disposable** PostgreSQL service with permission to create/drop databases. Each test creates a unique database. Tests never fall back to `DATABASE_URL` and never silently skip PostgreSQL coverage. CI supplies its own PostgreSQL 16 service.
+The complete suite requires PostgreSQL. Install local PostgreSQL binaries (`initdb`, `pg_ctl`; Postgres.app is also detected on macOS), or set `PANTRY_TEST_POSTGRES_URL` to a **disposable** PostgreSQL service with permission to create/drop databases. Each test creates a unique database. Tests never fall back to `DATABASE_URL` and never silently skip PostgreSQL coverage. CI supplies its own PostgreSQL 18 service.
 
 ```sh
 npm run build
@@ -69,6 +69,6 @@ For backend-only work, activate the environment and run `python -m pytest -c bac
 
 One Cloud Run service runs Python 3.12/Uvicorn and the built React frontend in one container. Cloud SQL for PostgreSQL stores application data and sessions; a private Cloud Storage bucket stores receipts; Secret Manager supplies secrets; Gemini on Google Cloud answers the assistant and reads receipts, signed in as the service account with no API key. Start with one always-on instance. `APP_ENV=production` enables fail-closed production checks; existing `NODE_ENV=production` settings remain supported. Keep `SESSION_SECRET` stable. Sign-in is email and password until Microsoft settings are added; the first Super Admin uses a one-time password from Secret Manager.
 
-After verification, `python scripts/package_release.py` stages a clean `release/` artifact with runtime source, pinned requirements, startup script, `Dockerfile` and built frontend. It refuses to overwrite a nonempty directory. GitHub checks build and upload this artifact; they do not deploy. Follow the [Google Cloud guide](documents/GCP_DEPLOYMENT.md) to build and deploy it with `gcloud run deploy --source release`.
+After verification, `python scripts/package_release.py` stages a clean `release/` artifact with runtime source, pinned requirements, startup script, `Dockerfile` and built frontend. It refuses to overwrite a nonempty directory. GitHub checks build and upload this artifact on every push. On `main`, when every check passes, the deploy job builds the image from it and deploys it to Cloud Run with Workload Identity Federation (no key). Work on a branch; merging to `main` releases. The [Google Cloud guide](documents/GCP_DEPLOYMENT.md) covers the one-time set-up, the manual fallback and rollback.
 
 Sessions retain their 15-minute access cookies and rotating refresh cookies with 90-day inactivity / 180-day absolute limits. Local password login has no MFA by the owner's explicit choice; Microsoft MFA does not protect that alternative route.
