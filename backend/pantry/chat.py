@@ -210,6 +210,9 @@ def describe_product(office_name, product, month, question):
             lines.append(product["message"])
     if spend:
         lines.append(f"{office_name} has spent {rupee(product['spend'])} on {product['name']} in {month_title(month)}.")
+        # As on Stock: bought on credit is spend only once the supplier is paid.
+        if product.get("creditSpend"):
+            lines.append(f"Another {rupee(product['creditSpend'])} was bought on credit. It counts as spend when the supplier is paid.")
     return " ".join(lines)
 
 
@@ -231,7 +234,10 @@ async def factual_reply(db, person, text, history=None, context_office_id=None, 
     except Exception as error:
         return error.message if isinstance(error, HttpError) else ""
     if not products and spend:
-        return f"{office['name']} has spent {rupee(pantry['spend'])} in {month_title(pantry['month'])}."
+        reply = f"{office['name']} has spent {rupee(pantry['spend'])} in {month_title(pantry['month'])}."
+        if pantry.get("creditBought"):
+            reply += f" Another {rupee(pantry['creditBought'])} was bought on credit. It counts as spend when the supplier is paid."
+        return reply
     lines = []
     for name in products:
         product = next((p for p in pantry["products"] if p["name"].lower() == name and not p["deletedAt"]), None)

@@ -276,3 +276,104 @@ async def test_an_old_failed_reading_does_not_come_back(api, offices, monkeypatc
     assert (await api(f"{path}/{later}/dismiss", actor="manager", method="POST", body={})).status_code == 200
     # Clearing the later receipt does not bring the old failure back.
     assert (await api(path + "/open", actor="manager")).json() == {"reading": None}
+
+
+async def read_bill(api, office, monkeypatch, payload):
+    async def ask(messages, tool_choice):
+        return submit_message(payload)
+
+    switch_on_gemini(monkeypatch)
+    monkeypatch.setattr(receipt_read, "ask_model", ask)
+    started = await api(f"/api/offices/{office}/receipt-readings", actor="manager", method="POST", body=upload(PNG))
+    await settle()
+    path = f"/api/offices/{office}/receipt-readings/{started.json()['readingId']}"
+    return path, (await api(path, actor="manager")).json()["result"]
+
+
+DELIVERED = {"date": "2026-09-18", "receiptTotal": "1050", "adjustments": [{"label": "Delivery", "amount": "50"}], "lines": [
+    {"printed": "Amul Taaza", "productName": "Milk", "packs": 1, "unitPrice": "100", "lineTotal": "100"},
+    {"printed": "Personal headphones", "productName": "", "packs": 1, "unitPrice": "900", "lineTotal": "900"},
+]}
+
+
+async def saved_milk_price(db, office):
+    row = await db.get("SELECT u.price_per_pack FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id WHERE p.office_id = ? AND p.name = 'Milk' ORDER BY u.created_at DESC LIMIT 1", office)
+    return row["price_per_pack"]
+
+
+async def test_a_discarded_line_takes_its_share_of_the_bill_charges(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, DELIVERED)
+    assert result["charges"] == "50.00"
+    milk, personal = result["lines"]
+    await api(path, actor="manager", method="PATCH", body={"lines": [milk, {**personal, "discarded": True}]})
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [{k: milk[k] for k in KEYS}]})
+    assert saved.status_code == 200, saved.json()
+    # ₹100 of a ₹1,000 bill takes ₹5 of the ₹50 delivery, not all of it.
+    assert await saved_milk_price(db, office) == "105.00"
+
+
+async def test_bill_charges_can_be_corrected_or_cleared_on_review(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, {**DELIVERED, "lines": DELIVERED["lines"][:1], "receiptTotal": "150"})
+    milk = result["lines"][0]
+    # A draft keeps what is typed so far, such as the start of a discount.
+    assert (await api(path, actor="manager", method="PATCH", body={"charges": "-", "lines": [milk]})).json()["result"]["charges"] == "-"
+    cleared = (await api(path, actor="manager", method="PATCH", body={"charges": "", "lines": [milk]})).json()["result"]
+    assert "charges" not in cleared
+    line = [{k: milk[k] for k in KEYS}]
+    bad = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "charges": "abc", "lines": line})
+    assert bad.status_code == 422 and bad.json()["error"] == receipt_read.BAD_CHARGES
+    over = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "charges": "1000000", "lines": line})
+    assert over.status_code == 422 and "over 1000000 INR" in over.json()["error"]
+    assert (await db.get("SELECT count(*) AS n FROM pantry_purchase WHERE price_per_pack = '1000100.00'"))["n"] == 0
+    # Cleared on review: the price is saved as printed.
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "charges": "", "lines": line})
+    assert saved.status_code == 200 and await saved_milk_price(db, office) == "100.00"
+
+
+async def test_a_receipt_line_never_adds_a_product_named_by_the_client(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, {"date": "2026-09-18", "lines": [{"printed": "Laptop", "productName": "", "packs": 1, "unitPrice": "500", "lineTotal": "500"}]})
+    line = {k: result["lines"][0][k] for k in KEYS}
+    count = "SELECT count(*) AS n FROM pantry_product WHERE office_id = ?"
+    before = (await db.get(count, office))["n"]
+    refused = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [{**line, "productId": "", "newName": "CEO Personal Laptop"}]})
+    assert refused.status_code == 422 and refused.json()["error"] == receipt_read.NEED_KNOWN_PRODUCT
+    assert (await db.get(count, office))["n"] == before
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [{**line, "productId": "", "newName": "other"}]})
+    assert saved.status_code == 200 and saved.json()["productsAdded"] == ["Other"]
+    assert [p["product"] for p in saved.json()["purchases"]] == ["Other"]
+
+
+def test_typed_charges_read_like_the_review_screen():
+    # Spaces, separators and ₹ are ignored on both sides, and the size rounds half up.
+    assert [receipt_read.parse_charges(value) for value in ("₹ 12", "1 000", "- 20", "1,234.50", "40.125", "-40.125", "", None)] == [1200, 100000, -2000, 123450, 4013, -4013, 0, 0]
+    for value in ("abc", "12-", "1e3", True):
+        with pytest.raises(core.HttpError):
+            receipt_read.parse_charges(value)
+    assert receipt_read.kept_share(-1000, 6000, 1000) == -857 and receipt_read.kept_share(600, 6000, 1000) == 514
+
+
+async def test_a_discount_larger_than_the_products_kept_is_refused(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, {**DELIVERED, "lines": DELIVERED["lines"][:1], "receiptTotal": "150"})
+    line = [{k: result["lines"][0][k] for k in KEYS}]
+    refused = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "charges": "-200", "lines": line})
+    assert refused.status_code == 422 and "discount is more than the products" in refused.json()["error"]
+    # Charges on free items have nothing to spread over, and are not dropped quietly.
+    free = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "charges": "50", "lines": [{**line[0], "pricePerPack": "0"}]})
+    assert free.status_code == 422 and "no price to spread the bill charges over" in free.json()["error"]
+    assert (await db.get("SELECT status FROM receipt_reading WHERE blob_path LIKE 'reading-%' ORDER BY created_at DESC LIMIT 1"))["status"] == "ready"
+
+
+async def test_discarded_lines_that_were_never_on_the_bill_take_no_share(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, DELIVERED)
+    milk, duplicate = result["lines"]
+    patched = (await api(path, actor="manager", method="PATCH", body={"discardedShare": False, "lines": [milk, {**duplicate, "discarded": True}]})).json()["result"]
+    assert patched["discardedShare"] is False
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [{k: milk[k] for k in KEYS}]})
+    assert saved.status_code == 200, saved.json()
+    # The whole ₹50 goes on the kept line.
+    assert await saved_milk_price(db, office) == "150.00"

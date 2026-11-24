@@ -205,7 +205,7 @@ async def payables_view(request: Request, office_id: str):
 @router.post("/api/offices/{office_id}/payments", status_code=201)
 async def record_payment(request: Request, office_id: str):
     db, actor, body = context(request)
-    return await payables.record_payment(db, actor, office_id, body, decode_receipt(body.get("receipt")))
+    return await payables.record_payment(db, actor, office_id, body, decode_receipt(body.get("receipt")), request.headers.get("idempotency-key"))
 
 
 @router.get("/api/payments/{payment_id}/receipt")

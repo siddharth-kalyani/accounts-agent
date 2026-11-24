@@ -10,7 +10,15 @@ import sys
 from pathlib import Path
 from .receipts import store_receipt, read_receipt, safe_blob_name
 
-TABLES = ["person", "office", "role_grant", "company_setting", "pantry_product", "pantry_purchase", "pantry_count", "pantry_receipt", "operation", "chat_thread", "chat_message", "idempotency"]
+TABLES = ["person", "office", "role_grant", "company_setting", "pantry_product", "pantry_purchase", "pantry_count", "pantry_receipt", "operation", "chat_thread", "chat_message", "idempotency",
+          "supplier", "credit_payment"]
+# Categories are merged by name rather than copied row for row: every new
+# database already starts with the default list, and products store their
+# category by name, so only names the target lacks are added.
+MERGED_TABLES = ["product_category"]
+# Added with suppliers, credit and payments: an older backup without them copies none.
+OPTIONAL_TABLES = {"product_category", "supplier", "credit_payment"}
+EXTENSIONS = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}
 
 
 def digest(data):
@@ -27,24 +35,26 @@ def inspect_migration(source_file, receipt_directory):
         source.execute("BEGIN")
         if source.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Source database failed its integrity check.")
-        rows = {table: [dict(r) for r in source.execute(f"SELECT * FROM {table}" + (" ORDER BY rowid" if table == "chat_message" else ""))] for table in TABLES}
+        present = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        rows = {table: [dict(r) for r in source.execute(f"SELECT * FROM {table}" + (" ORDER BY rowid" if table == "chat_message" else ""))] if table in present or table not in OPTIONAL_TABLES else [] for table in TABLES + MERGED_TABLES}
         if any(str(p.get("directory_object_id") or "").startswith("local:") for p in rows["person"]):
             raise ValueError("Demo fixture people cannot be migrated to production.")
         receipts = []
-        for row in rows["pantry_receipt"]:
+        # Purchase receipts and payment proofs are both copied under new immutable names.
+        for row, prefix in [*((r, r["purchase_id"]) for r in rows["pantry_receipt"]), *((r, f"payment-{r['id']}") for r in rows["credit_payment"])]:
             path = receipt_directory / safe_blob_name(row["blob_path"])
             if not path.exists():
                 raise ValueError("A referenced receipt is missing. Repair the backup before migrating.")
             data = path.read_bytes()
             if len(data) != row["byte_size"]:
                 raise ValueError("A receipt size does not match its database record.")
-            extension = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}.get(row["content_type"])
+            extension = EXTENSIONS.get(row["content_type"])
             if not extension:
                 raise ValueError("A receipt has an unsupported type.")
-            name = f"legacy-{row['purchase_id']}-{digest(data)[:32]}.{extension}"
+            name = f"legacy-{prefix}-{digest(data)[:32]}.{extension}"
             row["blob_path"] = name
             receipts.append({"name": name, "bytes": data, "contentType": row["content_type"]})
-        return {"rows": rows, "receipts": receipts, "counts": {table: len(rows[table]) for table in TABLES}}
+        return {"rows": rows, "receipts": receipts, "counts": {table: len(rows[table]) for table in TABLES + MERGED_TABLES}}
     finally:
         source.close()
 
@@ -80,6 +90,12 @@ async def migrate_snapshot(target, snapshot, *, upload=upload_once):
                 count = (await target.get(f"SELECT count(*) AS n FROM {table}"))["n"]
                 if count != snapshot["counts"][table]:
                     raise ValueError("Migration row-count verification failed.")
+            for row in snapshot["rows"].get("product_category", []):
+                if not await target.get("SELECT id FROM product_category WHERE lower(name) = lower(?)", row["name"]):
+                    await target.run("INSERT INTO product_category (id, name, created_by, created_at) VALUES (?, ?, ?, ?)", row["id"], row["name"], row["created_by"], row["created_at"])
+            names = {r["name"].casefold() for r in await target.all("SELECT name FROM product_category")}
+            if not all(row["name"].casefold() in names for row in snapshot["rows"].get("product_category", [])):
+                raise ValueError("Migration category verification failed.")
         return snapshot["counts"]
 
 

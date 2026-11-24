@@ -51,7 +51,8 @@ export function PantryCharts({ pantry, range, onRange }) {
           <div className="card-head">
             <h2>{monthLabel(pantry.forecast.month)}</h2>
             <div className="legend">
-              <span><i className="swatch actual" /> This month</span>
+              {/* Bought includes credit not yet paid, unlike Spent on Stock. */}
+              <span><i className="swatch actual" /> Bought this month</span>
               <span><i className="swatch forecast" /> Forecast</span>
             </div>
           </div>

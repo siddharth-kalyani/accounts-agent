@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, indiaDate, rupee } from "../api.js";
 import { useFocusTrap } from "../focus.js";
 import { useMounted } from "../hooks.js";
@@ -81,6 +81,10 @@ export function Payables({ officeId, officeName, month, monthName, revision, onC
     setPaying({ supplier: row.supplier, due: row.due, date: data?.today || "", amount: row.due, note: "", receipt: null, error: "" });
   }
 
+  // A retry of the same payment (say the reply was lost) reuses its key, so the
+  // server returns the first payment instead of recording a second one.
+  const paymentRequest = useRef(null);
+
   async function savePayment(event) {
     event.preventDefault();
     if (!paying || paying.busy) return;
@@ -90,10 +94,15 @@ export function Payables({ officeId, officeName, month, monthName, revision, onC
     }
     setPaying({ ...paying, busy: true, error: "" });
     try {
+      const body = { supplier: paying.supplier, date: paying.date, amount: String(paying.amount).trim().replace(/,/g, ""), note: paying.note.trim(), receipt: paying.receipt };
+      const fingerprint = JSON.stringify({ officeId, body });
+      if (paymentRequest.current?.fingerprint !== fingerprint) paymentRequest.current = { fingerprint, key: crypto.randomUUID() };
       const saved = await api(`/api/offices/${officeId}/payments`, {
         method: "POST",
-        body: { supplier: paying.supplier, date: paying.date, amount: String(paying.amount).trim(), note: paying.note.trim(), receipt: paying.receipt },
+        headers: { "Idempotency-Key": paymentRequest.current.key },
+        body,
       });
+      paymentRequest.current = null;
       if (!mounted.current) return;
       setPaying(null);
       onToast?.(`Paid ${rupee(saved.amount)} to ${saved.supplier}. ${Number(saved.due) > 0 ? `${rupee(saved.due)} still due.` : "Nothing left due."}`);

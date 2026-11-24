@@ -104,6 +104,17 @@ try {
   await page.getByRole("button", { name: "Add product", exact: true }).click();
   const secondCard = page.locator(".purchase-line").nth(1);
   await secondCard.locator(".product-row select").selectOption({ label: "Milk" });
+  // Today's count belongs to the product, not the card: with Milk on two cards
+  // the box is on the first, and what was typed stays when that card goes.
+  await secondCard.getByLabel("On hand now (packs)").fill("6");
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  const extraCard = page.locator(".purchase-line").nth(2);
+  await extraCard.locator(".product-row select").selectOption({ label: "Milk" });
+  await expect(extraCard.getByText("On hand for Milk is on its first card.", { exact: true })).toBeVisible();
+  await secondCard.getByRole("button", { name: "Remove Milk", exact: true }).click();
+  await expect(page.locator(".purchase-line")).toHaveCount(2);
+  await expect(secondCard.getByLabel("On hand now (packs)")).toHaveValue("6");
+  await secondCard.getByLabel("On hand now (packs)").fill("");
   await secondCard.getByLabel("Unit for Milk").selectOption("ml");
   await secondCard.getByLabel("Qty per pack for Milk").fill("500");
   await secondCard.getByLabel("Price per pack (INR) for Milk").fill("27");
@@ -199,6 +210,7 @@ try {
         { id: "0", printed: "Amul Taaza homogenized milk pouch with a long printed description", productId: "", productName: "", packs: 2, pricePerPack: "30.00", lineTotal: "60.00", note: "No unit rate could be read. Check the quantity; price was calculated from the line amount. Reference ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", matched: false, discarded: false },
         { id: "1", printed: "Mystery item", productId: "", productName: "", packs: 1, pricePerPack: "10.00", matched: false, discarded: false },
       ],
+      charges: "6.00",
     },
   };
   await page.route("**/api/offices/*/receipt-readings**", async (route) => {
@@ -232,6 +244,8 @@ try {
             matched: Boolean(line.productId),
             discarded: Boolean(line.discarded),
           })),
+          ...(body.charges ? { charges: body.charges } : {}),
+          ...(body.discardedShare === false ? { discardedShare: false } : {}),
         },
       };
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(draft) });
@@ -267,6 +281,20 @@ try {
   const mystery = page.locator(".receipt-line", { hasText: "Mystery item" });
   await mystery.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(mystery).toHaveCount(0);
+  // The bill charges can be corrected, and a discarded line takes its share with it:
+  // ₹60 kept of ₹70 takes ₹5.14 of the ₹6.
+  await expect(page.getByLabel("Bill charges (INR)")).toHaveValue("6.00");
+  await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹65.14");
+  await expect(page.locator(".receipt-sum")).toContainText("take ₹5.14 of them");
+  // A discarded duplicate was never on the bill: switched off, the kept line takes all ₹6.
+  const share = page.getByRole("switch", { name: "Discarded lines take their share" });
+  await expect(share).toBeChecked();
+  await page.getByText("Discarded lines take their share", { exact: true }).click();
+  await expect(share).not.toBeChecked();
+  await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹66.00");
+  await page.getByText("Discarded lines take their share", { exact: true }).click();
+  await expect(share).toBeChecked();
+  await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹65.14");
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await expect(amul.getByText("Printed ₹60.00", { exact: true })).toBeVisible();

@@ -12,7 +12,7 @@ import re
 import httpx
 from . import gemini, inventory, receipts
 from .calc import today_in_india
-from .compat import dumps, fixed
+from .compat import dumps, fixed, js_round
 from .core import HttpError, live_person, log, new_id, now, require_view, require_write, scoped, stamp
 from .receipt_checks import amount, inspect_receipt, money, move_charge_lines
 from .suppliers import clean_supplier, ensure_supplier, supplier_key
@@ -23,6 +23,7 @@ MODEL_FAILED = "The receipt could not be read. Try again in a moment."
 ALREADY_ADDED = "This receipt was already added."
 NEED_LINE = "Choose at least one line to add."
 NEED_PRODUCT = "Choose a product for each remaining line, or discard it."
+NEED_KNOWN_PRODUCT = "A receipt line goes under an office product or Other. Choose one for each line."
 OPEN_ALREADY = "Finish or clear the receipt already open."
 LINE_CAP = "Only 40 lines can be added from one receipt."
 SEARCH_MISS = "Search is unavailable. Leave this item unmatched."
@@ -382,6 +383,12 @@ def pick_supplier(value, known):
 _CREDIT_LABEL = re.compile(r"discount|rebate|saving|coupon|cashback", re.I)
 
 
+def charge_text(value):
+    """A printed or typed charge without separators, spaces, ₹, INR or Rs.
+    `chargePaise` in RecordPanel.jsx reads typed charges the same way."""
+    return re.sub(r"[,\s₹]|INR|Rs\.?", "", str(value if value is not None else ""), flags=re.I)
+
+
 def bill_charges(adjustments):
     """Net printed bill-level charges in paise: delivery, handling and bill tax,
     less bill discounts. Unreadable amounts are left out."""
@@ -389,14 +396,54 @@ def bill_charges(adjustments):
     for item in adjustments if isinstance(adjustments, list) else []:
         if not isinstance(item, dict):
             continue
-        value = re.sub(r"[,\s₹]|INR|Rs\.?", "", str(item.get("amount") if item.get("amount") is not None else ""), flags=re.I)
-        match = re.fullmatch(r"([-+]?)(\d+(?:\.\d+)?)", value)
+        match = re.fullmatch(r"([-+]?)(\d+(?:\.\d+)?)", charge_text(item.get("amount")))
         if not match:
             continue
-        paise = round(float(match.group(2)) * 100)
+        # Rounded as the review screen rounds it (Math.round on the size).
+        paise = js_round(float(match.group(2)) * 100)
         negative = match.group(1) == "-" or bool(_CREDIT_LABEL.search(str(item.get("label") or "")))
         total += -paise if negative else paise
     return total
+
+
+MAX_CHARGES = 100_000_000  # paise: ₹1,000,000 either way
+BAD_CHARGES = "Bill charges are an amount in INR, such as 40, or -20 for a bill discount."
+
+
+def soft_charges(value):
+    """Bill charges typed on review, in paise; blank or unreadable is 0 (none)."""
+    paise = bill_charges([{"amount": value}])
+    return paise if abs(paise) <= MAX_CHARGES else 0
+
+
+def parse_charges(value):
+    """Bill charges sent with an approval, in paise. Blank is none."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return 0
+    if isinstance(value, bool) or not re.fullmatch(r"[-+]?\d+(\.\d+)?", charge_text(value)):
+        raise HttpError(422, BAD_CHARGES)
+    paise = bill_charges([{"amount": value}])
+    if abs(paise) > MAX_CHARGES:
+        raise HttpError(422, BAD_CHARGES)
+    return paise
+
+
+def line_paise(line):
+    """A draft line's amount in paise: packs times price, or the printed line total."""
+    packs, price = soft_packs(line.get("packs")), soft_price(line.get("pricePerPack"))
+    if packs != "" and price:
+        return int(packs) * js_round(float(price) * 100)
+    total = soft_price(line.get("lineTotal"))
+    return js_round(float(total) * 100) if total else 0
+
+
+def kept_share(charges, kept, discarded):
+    """The part of the bill's charges that belongs to the lines kept, by amount.
+    A discarded personal item takes its own share of the delivery with it.
+    Rounded as the review screen's Math.round rounds it."""
+    if not charges or discarded <= 0 or kept <= 0:
+        return charges
+    return js_round(charges * kept / (kept + discarded))
 
 
 def spread_charges(lines, charges):
@@ -872,6 +919,8 @@ def public(row):
             for key in ("charges", "receiptTotal"):
                 if isinstance(parsed.get(key), str) and parsed.get(key):
                     result[key] = parsed[key]
+            if parsed.get("discardedShare") is False:
+                result["discardedShare"] = False
     return {
         "readingId": row["id"],
         "status": row["status"],
@@ -999,6 +1048,22 @@ async def patch_reading(db, person, office_id, reading_id, body):
                 parsed["supplier"] = ""
         if "onCredit" in body:
             parsed["onCredit"] = body.get("onCredit") is True
+        if "charges" in body:
+            # The reviewer can correct or clear charges the bill was read with.
+            # A draft keeps what is typed so far ("-" on the way to "-20");
+            # approval reads it strictly.
+            typed = clean_printed(body.get("charges"))[:20]
+            if typed:
+                parsed["charges"] = typed
+            else:
+                parsed.pop("charges", None)
+        if "discardedShare" in body:
+            # Off when the discarded lines were not on the bill (a duplicate or a
+            # misread row): the kept products then take all of the charges.
+            if body.get("discardedShare") is False:
+                parsed["discardedShare"] = False
+            else:
+                parsed.pop("discardedShare", None)
         parsed["lines"] = lines
         parsed.pop("purchases", None)
         await db.run(
@@ -1021,7 +1086,9 @@ async def dismiss(db, person, office_id, reading_id):
 
 
 @scoped
-async def save(db, person, office_id, reading_id, body):
+async def _approve(db, person, office_id, reading_id, body):
+    """The purchases from a reviewed receipt, all or none. The receipt file is
+    attached afterwards by `save`."""
     person = await live_person(db, person)
     require_write(person, office_id)
     incoming = body.get("lines") if isinstance(body, dict) else None
@@ -1057,10 +1124,15 @@ async def save(db, person, office_id, reading_id, body):
             if product_id:
                 product = await inventory.active_product(db, office_id, product_id)
             else:
-                # No office product chosen: the line adds a new product by this name.
+                # No office product chosen: the line names an office product, or
+                # goes under Other. Receipts never add a product named as printed.
                 name = new_name(item.get("newName"))
                 if not name:
                     raise HttpError(422, NEED_PRODUCT)
+                if name.casefold() == OTHER.casefold():
+                    name = OTHER
+                elif not await db.get("SELECT id FROM pantry_product WHERE office_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL", office_id, name):
+                    raise HttpError(422, NEED_KNOWN_PRODUCT)
                 inventory.validate_product_name(name)
                 product = {"newName": name, "category": await inventory.resolve_category(db, item.get("newCategory", line.get("newCategory")))}
             packs = inventory.parse_packs(item.get("packs"))
@@ -1073,10 +1145,25 @@ async def save(db, person, office_id, reading_id, body):
             )
             prepared.append((line, product, packs, price, details))
         # The bill's delivery and other charges go into the prices per pack, so
-        # the saved purchases add up to the printed bill.
-        charges = bill_charges([{"amount": parsed.get("charges")}]) if parsed.get("charges") else 0
+        # the saved purchases add up to the printed bill. The reviewer can
+        # correct or clear them, and discarded lines take their own share.
+        if "charges" in body:
+            charges = parse_charges(body.get("charges"))
+        else:
+            charges = soft_charges(parsed.get("charges")) if parsed.get("charges") else 0
+        kept = sum(packs * js_round(float(price) * 100) for _, _, packs, price, _ in prepared)
+        shared = (body.get("discardedShare") if "discardedShare" in body else parsed.get("discardedShare")) is not False
+        if shared:
+            charges = kept_share(charges, kept, sum(line_paise(line) for line in stored if line.get("discarded")))
+        if charges and kept <= 0:
+            raise HttpError(422, "The products being added have no price to spread the bill charges over. Check the prices or clear the charges.")
+        if charges and kept + charges <= 0:
+            raise HttpError(422, "The bill discount is more than the products being added. Check the bill charges.")
         if charges:
             spread = spread_charges([(packs, price) for _, _, packs, price, _ in prepared], charges)
+            for new_price in spread:
+                if float(new_price) > 1_000_000:
+                    raise HttpError(422, "With the bill charges, a price per pack is over 1000000 INR. Check the charges.")
             prepared = [(line, product, packs, new_price, details) for (line, product, packs, _, details), new_price in zip(prepared, spread)]
         try:
             supplier_name = clean_supplier(body.get("supplier") if "supplier" in body else parsed.get("supplier"))
@@ -1127,6 +1214,11 @@ async def save(db, person, office_id, reading_id, body):
             await inventory.write_count(db, person, office_id, product, today, packs)
         parsed["date"] = purchased_on
         parsed["supplier"], parsed["onCredit"] = supplier or "", on_credit
+        if "charges" in body:
+            if parse_charges(body.get("charges")):
+                parsed["charges"] = fixed(parse_charges(body.get("charges")) / 100)
+            else:
+                parsed.pop("charges", None)
         parsed["lines"] = stored
         parsed["purchases"] = purchases
         await db.run(
@@ -1134,20 +1226,31 @@ async def save(db, person, office_id, reading_id, body):
             dumps(parsed), at, reading_id,
         )
         blob_path, file_name = row["blob_path"], row["file_name"]
+    return person, purchases, products_added, parsed, blob_path, file_name
+
+
+async def save(db, person, office_id, reading_id, body):
+    """Approve a reviewed receipt: its purchases in one transaction, then the
+    receipt copied once, without holding the database lock, and attached to
+    every purchase from it in a short transaction."""
+    person, purchases, products_added, parsed, blob_path, file_name = await _approve(db, person, office_id, reading_id, body)
     try:
         data = await receipts.read_receipt(blob_path)
     except Exception:
         data = None
     receipt = {"fileName": file_name, "bytes": data} if data else None
-    for purchase in purchases:
-        if not receipt:
-            purchase["receiptError"] = "The receipt could not be stored. The purchase is saved."
-            continue
+    error_message = None if receipt else "The receipt could not be stored. The purchase is saved."
+    if receipt:
+        ids = [purchase["purchaseId"] for purchase in purchases]
         try:
-            await inventory.save_receipt(db, person, purchase["purchaseId"], receipt, stamp())
-            purchase["receiptSaved"] = True
+            await inventory.attach_bill_receipt(db, person, ids, await inventory.store_bill_receipt(ids, receipt), stamp(), only_missing=True)
         except Exception as error:
-            purchase["receiptError"] = error.message if isinstance(error, HttpError) else "The receipt could not be stored. The purchase is saved."
+            error_message = error.message if isinstance(error, HttpError) else "The receipt could not be stored. The purchase is saved."
+    for purchase in purchases:
+        if error_message:
+            purchase["receiptError"] = error_message
+        else:
+            purchase["receiptSaved"] = True
     parsed["purchases"] = purchases
     await db.run("UPDATE receipt_reading SET result_json = ?, updated_at = ? WHERE id = ?", dumps(parsed), stamp(), reading_id)
     return {"saved": True, "purchases": purchases, "productsAdded": products_added}

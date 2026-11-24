@@ -13,11 +13,15 @@ _SUFFIXES = ((r"\bpvt\b", "private"), (r"\bltd\b", "limited"), (r"\bco\b", "comp
 
 
 def clean_supplier(value):
-    """A supplier name with spacing tidied, or None when blank."""
+    """A supplier name with spacing tidied, or None when blank.
+
+    A name with no letter or digit ("-", ".") is blank too: it has no matching
+    key, so it could never be found again to reuse or pay.
+    """
     if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return None
     clean = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f]", " ", text(value))).strip()
-    if not clean:
+    if not clean or not supplier_key(clean):
         return None
     if len(clean) > 120:
         raise HttpError(422, "A supplier name needs 1 to 120 characters.")

@@ -13,18 +13,25 @@ const KINDS = ["receipt", "purchase", "product"];
 const ON_HAND_ERROR = "On hand is a whole number of packs, zero or more.";
 const NEED_SUPPLIER = "Choose the supplier for a credit purchase.";
 
-// One product on the Purchase tab. `onHand` is today's shelf count; it is only
-// sent once someone changes it (`onHandTouched`), so an expected figure is never
-// saved as a count. `prefilled` is the price filled in from the last purchase.
+// One product on the Purchase tab. `prefilled` is the price filled in from the
+// last purchase.
 let lineKeys = 0;
 function emptyLine() {
   lineKeys += 1;
-  return { key: `line-${lineKeys}`, productId: "", packs: "", price: "", packSize: "", packUnit: "N.A", mrp: "", onHand: "", onHandTouched: false, prefilled: "" };
+  return { key: `line-${lineKeys}`, productId: "", packs: "", price: "", packSize: "", packUnit: "N.A", mrp: "", prefilled: "" };
 }
 
+// `onHand` is today's shelf count typed per product id, shown on the first card
+// of that product. Only a typed figure is sent, so an expected figure is never
+// saved as a count, and the figure sent is always the one on screen.
 function emptyBill(date) {
   // Most pantry bills are on credit and cleared at month end.
-  return { date, supplier: "", onCredit: true, lines: [emptyLine()] };
+  return { date, supplier: "", onCredit: true, lines: [emptyLine()], onHand: {} };
+}
+
+// Typed amounts may carry thousands separators ("1,234.50"); the API takes plain numbers.
+function plainAmount(value) {
+  return String(value ?? "").trim().replace(/,/g, "");
 }
 
 export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, onToast, busy, loading, initialKind = "receipt" }) {
@@ -191,8 +198,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       lines: current.lines.map((line) => {
         if (line.key !== key) return line;
         const untouched = !line.price || line.price === line.prefilled;
-        // A count typed for one product must not carry over to another.
-        return { ...line, productId, price: untouched ? last : line.price, prefilled: untouched ? last : line.prefilled, onHand: "", onHandTouched: false };
+        return { ...line, productId, price: untouched ? last : line.price, prefilled: untouched ? last : line.prefilled };
       }),
     }));
     setBillError("");
@@ -223,7 +229,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       await onSaved?.();
       if (!mounted.current) return;
       // Whatever was typed meanwhile stays; only that line's product changes.
-      changeBillLine(newProduct.lineKey, { productId: saved.productId, onHand: "", onHandTouched: false });
+      changeBillLine(newProduct.lineKey, { productId: saved.productId });
       setNewProduct(null);
       onToast?.(`Added ${saved.name}.`);
     } catch (err) {
@@ -258,8 +264,12 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       setBillError("Enter the qty per pack, or set the unit to N.A.");
       return;
     }
-    const counted = bill.lines.filter((line) => line.onHandTouched && String(line.onHand).trim() !== "");
-    if (counted.some((line) => wholePacks(line.onHand) == null)) {
+    // Today's count goes with the first card of each product, where its box is.
+    const first = {};
+    for (const line of bill.lines) first[line.productId] ??= line.key;
+    const typed = (productId) => String(bill.onHand[productId] ?? "").trim();
+    const counted = Object.keys(first).filter((productId) => typed(productId) !== "");
+    if (counted.some((productId) => wholePacks(typed(productId)) == null)) {
       setBillError(ON_HAND_ERROR);
       return;
     }
@@ -272,11 +282,11 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       lines: bill.lines.map((line) => ({
         productId: line.productId,
         packs: Number(line.packs),
-        pricePerPack: String(line.price).trim(),
+        pricePerPack: plainAmount(line.price),
         packUnit: line.packUnit,
         packSize: line.packUnit === "N.A" ? "" : String(line.packSize).trim(),
-        ...(String(line.mrp).trim() ? { mrp: String(line.mrp).trim() } : {}),
-        ...(line.onHandTouched && String(line.onHand).trim() !== "" ? { onHand: wholePacks(line.onHand) } : {}),
+        ...(plainAmount(line.mrp) ? { mrp: plainAmount(line.mrp) } : {}),
+        ...(first[line.productId] === line.key && typed(line.productId) !== "" ? { onHand: wholePacks(typed(line.productId)) } : {}),
       })),
     }, receipt);
     if (result === true) {
@@ -424,16 +434,18 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
           date: latest.result.date,
           supplier: String(latest.result.supplier || "").trim(),
           onCredit: Boolean(latest.result.onCredit),
+          charges: plainAmount(latest.result.charges),
+          discardedShare: latest.result.discardedShare !== false,
           lines: lines.map((line) => ({
             id: line.id,
             // A line with no product goes under Other, added now if the office has none.
             productId: line.productId || other?.productId || "",
             ...(line.productId || other ? {} : { newName: OTHER }),
             packs: line.packs,
-            pricePerPack: line.pricePerPack,
+            pricePerPack: plainAmount(line.pricePerPack),
             packSize: (line.packUnit || "N.A") === "N.A" ? "" : String(line.packSize ?? "").trim(),
             packUnit: line.packUnit || "N.A",
-            mrp: line.mrp ?? "",
+            mrp: plainAmount(line.mrp),
             // GST and discount are no longer entered on review.
             taxPercent: "",
             discount: "",
@@ -624,19 +636,55 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
                 }) : <p className="note">No lines left on this receipt.</p>}
               </div>
               {visibleLines.length ? (() => {
-                const items = Number(billTotal(visibleLines.map((line) => ({ packs: line.packs, price: line.pricePerPack }))));
-                const charges = Number(reading.result.charges || 0);
-                const total = (Math.round(items * 100) + Math.round(charges * 100)) / 100;
+                const items = Math.round(Number(billTotal(visibleLines.map((line) => ({ packs: line.packs, price: line.pricePerPack })))) * 100);
+                const discarded = (reading.result.lines || []).filter((line) => line.discarded).reduce((sum, line) => sum + linePaise(line), 0);
+                const charges = chargePaise(reading.result.charges);
+                const shared = reading.result.discardedShare !== false;
+                // As on the server: lines discarded from the bill take their own share of the charges,
+                // unless they were never on it (a duplicate or a misread row).
+                const share = shared && charges && discarded > 0 && items > 0 ? Math.round((charges * items) / (items + discarded)) : charges;
+                const total = (items + share) / 100;
                 return (
                   <div className="field wide receipt-sum">
+                    <label className="field receipt-charges">Bill charges (INR)
+                      <input
+                        inputMode="decimal"
+                        autoComplete="off"
+                        aria-describedby={`${hintId}-charges`}
+                        value={reading.result.charges ?? ""}
+                        onChange={(event) => changeReceipt({ charges: event.target.value }, false)}
+                      />
+                    </label>
+                    <small className="field-hint" id={`${hintId}-charges`}>
+                      Delivery and other charges on the bill, less bill discounts (enter a discount as -20). They are spread over the prices when you add the purchases. Clear the box if the prices already include them.
+                      {share && share !== charges ? ` The products you add take ${rupee((share / 100).toFixed(2))} of them; discarded lines take the rest.` : ""}
+                    </small>
+                    {charges && discarded > 0 ? (
+                      <label className="switch" htmlFor={`${hintId}-share`}>
+                        <input
+                          id={`${hintId}-share`}
+                          type="checkbox"
+                          role="switch"
+                          checked={shared}
+                          onChange={(event) => changeReceipt({ discardedShare: event.target.checked }, true)}
+                        />
+                        <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+                        <span>Discarded lines take their share</span>
+                      </label>
+                    ) : null}
                     <p className="bill-total">
                       <span className="muted">Bill total</span> <strong>{rupee(total.toFixed(2))}</strong>
                       {reading.result.receiptTotal && Number(reading.result.receiptTotal) !== total ? <small className="muted"> Printed {rupee(reading.result.receiptTotal)}</small> : null}
                     </p>
-                    {charges ? (
+                    {share ? (
                       <small className="field-hint">
-                        Items {rupee(items.toFixed(2))} {charges > 0 ? "+" : "−"} {rupee(Math.abs(charges).toFixed(2))} delivery and other bill charges, spread over the items' prices when you add them.
+                        Items {rupee((items / 100).toFixed(2))} {share > 0 ? "+" : "−"} {rupee((Math.abs(share) / 100).toFixed(2))} bill charges.
                       </small>
+                    ) : null}
+                    {share && items <= 0 ? (
+                      <p className="error" role="alert">The products being added have no price to spread the bill charges over. Check the prices or clear the charges.</p>
+                    ) : share && items + share <= 0 ? (
+                      <p className="error" role="alert">The bill discount is more than the products being added. Check the bill charges.</p>
                     ) : null}
                   </div>
                 );
@@ -742,7 +790,8 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
                 const chosen = products.find((product) => product.productId === line.productId);
                 const title = chosen?.name || `Product ${index + 1}`;
                 const showCount = line.productId && billFirst[line.productId] === line.key;
-                const onHandValue = line.onHandTouched ? line.onHand : chosen ? String(onHandAfter(chosen, bill.date, billAdded[line.productId])) : "";
+                const onHandTouched = Boolean(line.productId) && bill.onHand[line.productId] !== undefined;
+                const onHandValue = onHandTouched ? bill.onHand[line.productId] : chosen ? String(onHandAfter(chosen, bill.date, billAdded[line.productId])) : "";
                 return (
                   <article key={line.key} className="receipt-line purchase-line">
                     <div className="receipt-line-head">
@@ -819,13 +868,17 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
                             value={onHandValue}
                             disabled={!chosen}
                             aria-describedby={`${hintId}-${line.key}-onhand`}
-                            onChange={(event) => changeBillLine(line.key, { onHand: event.target.value, onHandTouched: true })}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setBill((current) => ({ ...current, onHand: { ...current.onHand, [line.productId]: value } }));
+                              setBillError("");
+                            }}
                           />
                         </label>
                       ) : null}
                     </div>
                     {showCount || !line.productId ? (
-                      <p className="field-hint on-hand-hint" id={`${hintId}-${line.key}-onhand`}>{shelfHint(chosen, line.onHandTouched)}</p>
+                      <p className="field-hint on-hand-hint" id={`${hintId}-${line.key}-onhand`}>{shelfHint(chosen, onHandTouched)}</p>
                     ) : <p className="note">On hand for {chosen?.name || "this product"} is on its first card.</p>}
                   </article>
                 );
@@ -847,6 +900,25 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       ) : null}
     </section>
   );
+}
+
+// A draft line's amount in paise: packs times price, else the printed line total.
+function linePaise(line) {
+  const count = Number(line.packs);
+  const each = Number(plainAmount(line.pricePerPack));
+  if (Number.isInteger(count) && count > 0 && plainAmount(line.pricePerPack) !== "" && Number.isFinite(each)) return count * Math.round(each * 100);
+  const printed = Number(plainAmount(line.lineTotal));
+  return plainAmount(line.lineTotal) !== "" && Number.isFinite(printed) ? Math.round(printed * 100) : 0;
+}
+
+// Bill charges as typed, in paise; anything unreadable counts as none. Read as
+// the server reads them (`charge_text` and `bill_charges` in receipt_read.py):
+// separators, spaces, ₹, INR and Rs are ignored, and the size is rounded before the sign.
+function chargePaise(value) {
+  const match = /^([-+]?)(\d+(?:\.\d+)?)$/.exec(String(value ?? "").replace(/[,\s₹]|INR|Rs\.?/gi, ""));
+  if (!match) return 0;
+  const paise = Math.floor(Number(match[2]) * 100 + 0.5);
+  return match[1] === "-" ? -paise : paise;
 }
 
 function billTotal(lines) {
@@ -872,6 +944,8 @@ function patchBody(next) {
     date: next.result?.date || "",
     supplier: next.result?.supplier || "",
     onCredit: Boolean(next.result?.onCredit),
+    charges: next.result?.charges ?? "",
+    discardedShare: next.result?.discardedShare !== false,
     lines: (next.result?.lines || []).map((line) => ({
       id: line.id,
       productId: line.productId || "",

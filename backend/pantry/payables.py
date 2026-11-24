@@ -6,9 +6,11 @@ Nothing is hard-deleted: removing a payment sets `deleted_at`, and the
 balance goes back up.
 """
 from .calc import js_round, today_in_india
-from .compat import fixed, number, text
+from .compat import dumps, fixed, number, text
 from .core import HttpError, live_person, log, new_id, now, office_by_id, require_view, require_write, scoped, stamp, names_by_id, can_write
 from . import calc, inventory, receipts, suppliers
+import hashlib
+import json
 import math
 import re
 
@@ -40,6 +42,62 @@ async def supplier_due(db, office_id, supplier):
     owed = sum(amount for name, _, amount, _ in await credit_rows(db, office_id) if name == supplier)
     paid = sum(cents(row["amount"]) for row in await payment_rows(db, office_id) if row["supplier"] == supplier)
     return owed - paid
+
+
+async def supplier_events(db, office_id, supplier):
+    """Credit (+) and payments (-) with one supplier as (date, order, paise), oldest first.
+    On one day, credit comes before payments."""
+    events = [(day, 0, amount) for name, day, amount, _ in await credit_rows(db, office_id) if name == supplier]
+    events += [(row["paid_on"], 1, -cents(row["amount"])) for row in await payment_rows(db, office_id) if row["supplier"] == supplier]
+    return sorted(events)
+
+
+def owed_from(events, day):
+    """What was owed on `day` and stayed owed after it: the lowest running balance
+    from the end of that day on. A payment dated `day` can be at most this."""
+    balance = sum(amount for when, _, amount in events if when <= day)
+    lowest = balance
+    for when, _, amount in events:
+        if when > day:
+            balance += amount
+            lowest = min(lowest, balance)
+    return lowest
+
+
+def day_balances(events):
+    """What was owed at the end of each day with an event, in paise. Credit
+    comes before payments on a day, so the end of the day is its lowest point."""
+    balances, balance = {}, 0
+    for when, _, amount in events:
+        balance += amount
+        balances[when] = balance
+    return balances
+
+
+def newly_overpaid(before, after):
+    """Whether `after` leaves any day paid more than was bought on credit, and by
+    more than `before` did. A balance that was already off (an older
+    back-dated payment) does not block a change that does not make it worse."""
+    was, now = day_balances(before), day_balances(after)
+    then = later = 0
+    for day in sorted(set(was) | set(now)):
+        then, later = was.get(day, then), now.get(day, later)
+        if later < 0 and later < then:
+            return True
+    return False
+
+
+async def credit_before(db, office_id, names):
+    """Each named supplier's credit and payments, taken before a change to its credit."""
+    return {supplier: await supplier_events(db, office_id, supplier) for supplier in sorted({name for name in names if name})}
+
+
+async def check_paid_within_credit(db, office_id, before):
+    """Refuse a change to credit purchases that leaves a supplier paid more than
+    was bought on credit by some date. The caller's transaction rolls it back."""
+    for supplier, events in before.items():
+        if newly_overpaid(events, await supplier_events(db, office_id, supplier)):
+            raise HttpError(422, f"{supplier} was already paid for this credit. Remove or correct that payment on Payables first.")
 
 
 @scoped
@@ -91,7 +149,8 @@ async def get_payables(db, person, office_id, month=None):
         payment.pop("createdAt")
     return {
         "officeId": office_id, "officeName": office["name"], "month": selected, "today": today, "canWrite": can_write(person, office_id),
-        "due": rupees(sum(f["due"] for f in figures.values())),
+        # What is owed: a supplier can never be owed less than nothing.
+        "due": rupees(sum(max(f["due"], 0) for f in figures.values())),
         "credit": rupees(sum(f["credit"] for f in figures.values())),
         "paid": rupees(sum(f["paid"] for f in figures.values())),
         "suppliers": rows, "payments": payments, "purchases": purchases,
@@ -99,15 +158,48 @@ async def get_payables(db, person, office_id, month=None):
 
 
 def parse_amount(value):
+    if isinstance(value, str):
+        # Typed amounts can carry separators or the rupee sign: "1,00,000", "₹ 400".
+        value = re.sub(r"[,\s₹]", "", value)
     amount = number(value)
-    if value == "" or value is None or isinstance(value, bool) or not math.isfinite(amount) or not 0 < amount <= 10_000_000:
-        raise HttpError(422, "The amount paid is more than 0 and at most 10000000 INR.")
+    # Checked after rounding to paise, so 0.001 is not saved as a ₹0.00 payment.
+    if value == "" or value is None or isinstance(value, bool) or not math.isfinite(amount) or not 0 < amount <= 10_000_000 or cents(fixed(amount)) < 1:
+        raise HttpError(422, "The amount paid is from 0.01 to 10000000 INR.")
     return fixed(amount)
 
 
+def payment_hash(office_id, body, receipt):
+    # The office and kind are part of the request, so a key reused for another
+    # office (or for a bill) is refused instead of returning this payment.
+    receipt_hash = hashlib.sha256(receipt["bytes"]).hexdigest() if isinstance(receipt, dict) and receipt.get("bytes") else ""
+    payload = {k: body[k] for k in ("supplier", "date", "amount", "note") if k in body}
+    return hashlib.sha256(dumps({**payload, "receipt": receipt_hash, "officeId": office_id, "kind": "payment"}).encode()).hexdigest()
+
+
+async def record_payment(db, person, office_id, body, receipt=None, idempotency=None):
+    """Clear some or all of a supplier's credit. The proof of payment is required.
+
+    Honors an `Idempotency-Key`, as purchases do: a retry after a lost response
+    returns the first payment instead of paying twice.
+
+    Everything is checked first; the proof is then stored without holding the
+    database lock, and the payment is checked again and saved in one
+    transaction. A payment refused at that point leaves only an unused proof
+    object behind, never a payment without its proof.
+    """
+    checked = await _payment_request(db, person, office_id, body, receipt, idempotency, save=None)
+    if "result" in checked:
+        return checked["result"]
+    extension = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}[checked["contentType"]]
+    blob = f"payment-{checked['paymentId']}-{new_id()}.{extension}"
+    await receipts.store_receipt(blob, checked["data"], checked["contentType"])
+    return (await _payment_request(db, person, office_id, body, receipt, idempotency, save={**checked, "blob": blob}))["result"]
+
+
 @scoped
-async def record_payment(db, person, office_id, body, receipt=None):
-    """Clear some or all of a supplier's credit. The proof of payment is required."""
+async def _payment_request(db, person, office_id, body, receipt, idempotency, save):
+    """Check a payment (save is None), or check it again and save it with its
+    stored proof. Returns the checked request, or {"result": payment}."""
     person = await live_person(db, person)
     require_write(person, office_id)
     if not await office_by_id(db, office_id):
@@ -127,22 +219,37 @@ async def record_payment(db, person, office_id, body, receipt=None):
     content_type = receipts.sniff_receipt(data)
     if not content_type:
         raise HttpError(422, "A receipt is a PDF, JPEG, or PNG.")
+    key = text(idempotency or "").strip()
+    if key and not re.fullmatch(r"[A-Za-z0-9._:-]{8,200}", key):
+        raise HttpError(422, "The save key is not valid. Retry the payment.")
+    hashed = payment_hash(office_id, body, receipt) if key else ""
     async with db.transaction():
+        prior = await db.get("SELECT request_hash, body FROM idempotency WHERE person_id = ? AND key = ?", person["id"], key) if key else None
+        if prior:
+            if prior["request_hash"] != hashed:
+                raise HttpError(409, "This save was already sent with different details.")
+            return {"result": json.loads(prior["body"])}
         supplier = await suppliers.find_supplier(db, name)
         due = await supplier_due(db, office_id, supplier) if supplier else 0
         if not supplier or due <= 0:
             raise HttpError(422, f"Nothing is due to {supplier or name} at this office.")
         if cents(amount) > due:
             raise HttpError(422, f"That is more than the ₹{rupees(due)} due to {supplier}.")
-        payment_id = new_id()
-        extension = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}[content_type]
-        blob = f"payment-{payment_id}-{new_id()}.{extension}"
-        await receipts.store_receipt(blob, data, content_type)
+        # A back-dated payment can only clear what was already owed on its date.
+        owed = owed_from(await supplier_events(db, office_id, supplier), paid_on)
+        if cents(amount) > owed:
+            raise HttpError(422, f"Only ₹{rupees(max(owed, 0))} was owed to {supplier} on {paid_on}. Check the payment date.")
+        if save is None:
+            return {"paymentId": new_id(), "data": data, "contentType": content_type}
+        payment_id, blob, at = save["paymentId"], save["blob"], stamp()
         await db.run("""INSERT INTO credit_payment (id, office_id, supplier, paid_on, amount, note, blob_path, file_name, content_type, byte_size, created_by, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", payment_id, office_id, supplier, paid_on, amount, note, blob,
-                     receipts.safe_receipt_name(receipt.get("fileName"), blob), content_type, len(data), person["id"], stamp())
+                     receipts.safe_receipt_name(receipt.get("fileName"), blob), content_type, len(data), person["id"], at)
         await log(db, person["id"], "payment.create", "payment", payment_id, office_id, f"Paid ₹{amount} to {supplier} on {paid_on}.")
-    return {"paymentId": payment_id, "supplier": supplier, "date": paid_on, "amount": amount, "due": rupees(due - cents(amount))}
+        result = {"paymentId": payment_id, "supplier": supplier, "date": paid_on, "amount": amount, "due": rupees(due - cents(amount))}
+        if key:
+            await db.run("INSERT INTO idempotency (person_id, key, request_hash, body, created_at) VALUES (?, ?, ?, ?, ?)", person["id"], key, hashed, dumps(result), at)
+    return {"result": result}
 
 
 @scoped

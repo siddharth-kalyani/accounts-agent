@@ -1733,6 +1733,7 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 .bill-total { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
 .bill-total strong { font-size: 18px; margin-left: 6px; }
 .receipt-sum { display: grid; gap: 4px; }
+.receipt-sum .receipt-charges { max-width: 220px; }
 
 /* Bought on credit: a switch, ink when on. */
 .credit-toggle { display: grid; gap: 4px; }

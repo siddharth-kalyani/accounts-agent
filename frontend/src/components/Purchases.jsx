@@ -95,7 +95,7 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
     try {
       await api(`/api/purchases/${editing.purchaseId}`, {
         method: "PUT",
-        body: { date: editing.date, packs: Number(editing.packs), pricePerPack: editing.price },
+        body: { date: editing.date, packs: Number(editing.packs), pricePerPack: String(editing.price ?? "").trim().replace(/,/g, "") },
       });
       setEditing(null);
       onToast?.("Purchase corrected.");

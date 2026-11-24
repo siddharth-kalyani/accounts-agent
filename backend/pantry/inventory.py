@@ -332,9 +332,12 @@ async def delete_product(db, person, product_id):
         raise HttpError(404, "Product not found.")
     require_write(person, product["office_id"])
     at = stamp()
+    owed_to = [r["supplier"] for r in await db.all("SELECT DISTINCT supplier FROM pantry_purchase WHERE product_id = ? AND deleted_at IS NULL AND on_credit = 1", product_id)]
+    before = await credit_before(db, product["office_id"], owed_to)
     await db.run("UPDATE pantry_receipt SET deleted_by = ?, deleted_at = ? WHERE deleted_at IS NULL AND purchase_id IN (SELECT id FROM pantry_purchase WHERE product_id = ?)", person["id"], at, product_id)
     for table in ("pantry_purchase", "pantry_count"):
         await db.run(f"UPDATE {table} SET deleted_by = ?, deleted_at = ? WHERE product_id = ? AND deleted_at IS NULL", person["id"], at, product_id)
+    await check_credit(db, product["office_id"], before)
     await db.run("UPDATE pantry_product SET deleted_by = ?, deleted_at = ? WHERE id = ?", person["id"], at, product_id)
     await log(db, person["id"], "product.delete", "product", product_id, product["office_id"], f"Deleted {product['name']}.")
     return {"productId": product_id, "deleted": True}
@@ -508,20 +511,55 @@ MAX_PURCHASE_LINES = 40
 NEED_SUPPLIER = "Choose the supplier for a credit purchase."
 
 
-def batch_hash(body, receipt):
+async def credit_before(db, office_id, names):
+    """Take before changing credit purchases; pass to `check_credit` after."""
+    from .payables import credit_before as before  # payables imports this module
+    return await before(db, office_id, names)
+
+
+async def check_credit(db, office_id, before):
+    """A removed or corrected credit purchase cannot leave its supplier paid more
+    than was bought on credit. Call it after the change, inside the transaction."""
+    from .payables import check_paid_within_credit  # payables imports this module
+    await check_paid_within_credit(db, office_id, before)
+
+
+def batch_hash(office_id, body, receipt):
+    # The office and kind are part of the request, so a key reused for another
+    # office (or for a payment) is refused instead of returning this save.
     receipt_hash = hashlib.sha256(receipt["bytes"]).hexdigest() if receipt and "bytes" in receipt else ""
     payload = {k: body[k] for k in ("date", "supplier", "onCredit", "lines") if k in body}
-    return hashlib.sha256(dumps({**payload, "receipt": receipt_hash}).encode()).hexdigest()
+    return hashlib.sha256(dumps({**payload, "receipt": receipt_hash, "officeId": office_id, "kind": "bill"}).encode()).hexdigest()
 
 
-@scoped
 async def create_purchases(db, person, office_id, body, receipt=None, idempotency=None):
     """Several products from one bill: one date, supplier, credit choice and receipt.
 
     Every purchase and any shelf count typed with it are saved in one
-    transaction. The receipt is stored for each purchase afterwards; a failed
+    transaction. The receipt is then stored once, without holding the database
+    lock, and attached to every purchase in a short transaction; a failed
     upload keeps the purchases, as for a single purchase.
     """
+    result, key, at = await _save_bill(db, person, office_id, body, receipt, idempotency)
+    if receipt is not None:
+        result.pop("receiptError", None)
+        waiting = [purchase for purchase in result["purchases"] if not purchase.get("receiptSaved")]
+        if waiting:
+            ids = [purchase["purchaseId"] for purchase in waiting]
+            try:
+                await attach_bill_receipt(db, person, ids, await store_bill_receipt(ids, receipt), at, only_missing=True)
+                for purchase in waiting:
+                    purchase["receiptSaved"] = True
+            except Exception as error:
+                result["receiptError"] = error.message if isinstance(error, HttpError) else "The receipt could not be stored. The purchases are saved."
+        if key:
+            await db.run("UPDATE idempotency SET body = ? WHERE person_id = ? AND key = ?", dumps({k: v for k, v in result.items() if k != "receiptError"}), person["id"], key)
+    return result
+
+
+@scoped
+async def _save_bill(db, person, office_id, body, receipt, idempotency):
+    """The purchases and counts of one bill, all or none. Returns (result, key, at)."""
     person = await live_person(db, person)
     require_write(person, office_id)
     body = body if isinstance(body, dict) else {}
@@ -552,7 +590,7 @@ async def create_purchases(db, person, office_id, body, receipt=None, idempotenc
     key = text(idempotency or "").strip()
     if key and not re.fullmatch(r"[A-Za-z0-9._:-]{8,200}", key):
         raise HttpError(422, "The save key is not valid. Retry the purchase.")
-    hashed = batch_hash(body, receipt) if key else ""
+    hashed = batch_hash(office_id, body, receipt) if key else ""
     at = stamp()
     async with db.transaction():
         prior = await db.get("SELECT request_hash, body FROM idempotency WHERE person_id = ? AND key = ?", person["id"], key) if key else None
@@ -574,23 +612,26 @@ async def create_purchases(db, person, office_id, body, receipt=None, idempotenc
             result = {"date": purchased_on, "supplier": supplier, "onCredit": on_credit, "purchases": saved}
             if key:
                 await db.run("INSERT INTO idempotency (person_id, key, request_hash, body, created_at) VALUES (?, ?, ?, ?, ?)", person["id"], key, hashed, dumps(result), at)
-    if receipt is not None:
-        result.pop("receiptError", None)
-        for purchase in result["purchases"]:
-            if purchase.get("receiptSaved"):
-                continue
-            try:
-                await save_receipt(db, person, purchase["purchaseId"], receipt, at)
-                purchase["receiptSaved"] = True
-            except Exception as error:
-                result["receiptError"] = error.message if isinstance(error, HttpError) else "The receipt could not be stored. The purchases are saved."
-        if key:
-            await db.run("UPDATE idempotency SET body = ? WHERE person_id = ? AND key = ?", dumps({k: v for k, v in result.items() if k != "receiptError"}), person["id"], key)
-    return result
+    return result, key, at
+
+
+async def save_receipt(db, person, purchase_id, receipt, at):
+    await save_bill_receipt(db, person, [purchase_id], receipt, at)
 
 
 @transactional
-async def save_receipt(db, person, purchase_id, receipt, at):
+async def save_bill_receipt(db, person, purchase_ids, receipt, at):
+    """Store one receipt once and attach it to each purchase on the bill."""
+    await attach_bill_receipt(db, person, purchase_ids, await store_bill_receipt(purchase_ids, receipt), at)
+
+
+async def store_bill_receipt(purchase_ids, receipt):
+    """Check and store a bill's receipt once. It needs no database, so a caller
+    can run it outside the database lock and attach the result afterwards.
+
+    The object is immutable, so purchases can share it: replacing one
+    purchase's receipt later writes a new object for that purchase only.
+    """
     data = receipt.get("bytes") if receipt else None
     if not data:
         raise HttpError(422, "The receipt file is empty.")
@@ -600,17 +641,33 @@ async def save_receipt(db, person, purchase_id, receipt, at):
     if not content_type:
         raise HttpError(422, "A receipt is a PDF, JPEG, or PNG.")
     ext = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}[content_type]
-    filename = f"{purchase_id}-{new_id()}.{ext}"
-    existing = await db.get("SELECT purchase_id FROM pantry_receipt WHERE purchase_id = ?", purchase_id)
+    filename = f"{purchase_ids[0] if len(purchase_ids) == 1 else 'bill'}-{new_id()}.{ext}"
     await receipts.store_receipt(filename, data, content_type)
-    file_name = receipts.safe_receipt_name(receipt.get("fileName"), filename)
-    if existing:
-        await db.run("UPDATE pantry_receipt SET blob_path = ?, file_name = ?, content_type = ?, byte_size = ?, deleted_by = NULL, deleted_at = NULL WHERE purchase_id = ?", filename, file_name, content_type, len(data), purchase_id)
-    else:
-        await db.run("INSERT INTO pantry_receipt (purchase_id, blob_path, file_name, content_type, byte_size, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", purchase_id, filename, file_name, content_type, len(data), person["id"], at)
-    product = await db.get("SELECT p.office_id, p.name FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id WHERE u.id = ?", purchase_id)
-    name = product["name"] if product else "a purchase"
-    await log(db, person["id"], "receipt.replace" if existing else "receipt.attach", "receipt", purchase_id, product["office_id"] if product else None, f"Replaced the receipt on {name}." if existing else f"Attached a receipt to {name}.")
+    return {"blob": filename, "fileName": receipts.safe_receipt_name(receipt.get("fileName"), filename), "contentType": content_type, "size": len(data)}
+
+
+@transactional
+async def attach_bill_receipt(db, person, purchase_ids, stored, at, *, only_missing=False):
+    """Point each purchase at a receipt already stored by `store_bill_receipt`.
+
+    `only_missing` is for a new bill's receipt, attached after the database
+    lock was let go for the upload: a purchase removed meanwhile, or one a
+    retried request already gave its receipt, is left as it is.
+    """
+    filename, file_name, content_type, size = stored["blob"], stored["fileName"], stored["contentType"], stored["size"]
+    for purchase_id in purchase_ids:
+        if only_missing:
+            live = await db.get("SELECT id FROM pantry_purchase WHERE id = ? AND deleted_at IS NULL", purchase_id)
+            if not live or await db.get("SELECT purchase_id FROM pantry_receipt WHERE purchase_id = ? AND deleted_at IS NULL", purchase_id):
+                continue
+        existing = await db.get("SELECT purchase_id FROM pantry_receipt WHERE purchase_id = ?", purchase_id)
+        if existing:
+            await db.run("UPDATE pantry_receipt SET blob_path = ?, file_name = ?, content_type = ?, byte_size = ?, deleted_by = NULL, deleted_at = NULL WHERE purchase_id = ?", filename, file_name, content_type, size, purchase_id)
+        else:
+            await db.run("INSERT INTO pantry_receipt (purchase_id, blob_path, file_name, content_type, byte_size, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", purchase_id, filename, file_name, content_type, size, person["id"], at)
+        product = await db.get("SELECT p.office_id, p.name FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id WHERE u.id = ?", purchase_id)
+        name = product["name"] if product else "a purchase"
+        await log(db, person["id"], "receipt.replace" if existing else "receipt.attach", "receipt", purchase_id, product["office_id"] if product else None, f"Replaced the receipt on {name}." if existing else f"Attached a receipt to {name}.")
 
 
 @transactional
@@ -656,7 +713,9 @@ async def correct_purchase(db, person, purchase_id, body):
     purchased_on = parse_date(body["date"]) if body.get("date") else purchase["purchased_on"]
     packs = parse_packs(body["packs"]) if body.get("packs") is not None else purchase["packs"]
     price = parse_price(body["pricePerPack"]) if body.get("pricePerPack") is not None else purchase["price_per_pack"]
+    before = await credit_before(db, product["office_id"], [purchase["supplier"]]) if purchase.get("on_credit") else {}
     await db.run("UPDATE pantry_purchase SET purchased_on = ?, packs = ?, price_per_pack = ? WHERE id = ?", purchased_on, packs, price, purchase_id)
+    await check_credit(db, product["office_id"], before)
     await log(db, person["id"], "purchase.correct", "purchase", purchase_id, product["office_id"], f"Corrected {product['name']} to {packs} packs on {purchased_on}. The original entry stays with its first person.")
     return {"purchaseId": purchase_id}
 
@@ -727,7 +786,9 @@ async def _remove_row(db, person, row_id, kind, delete):
     at = stamp()
     if delete and kind == "purchase":
         await db.run("UPDATE pantry_receipt SET deleted_by = ?, deleted_at = ? WHERE purchase_id = ? AND deleted_at IS NULL", person["id"], at, row_id)
+    before = await credit_before(db, product["office_id"], [row["supplier"]]) if kind == "purchase" and row.get("on_credit") else {}
     await db.run(f"UPDATE {table} SET deleted_by = ?, deleted_at = ? WHERE id = ?", person["id"], at, row_id)
+    await check_credit(db, product["office_id"], before)
     if delete:
         message = f"Deleted a purchase of {row['packs']} packs of {product['name']} on {row['purchased_on']}." if kind == "purchase" else f"Deleted the {row['counted_on']} shelf count of {row['packs']} packs of {product['name']}."
     else:
@@ -770,13 +831,30 @@ async def list_operations(db, person, office_id, range=None):
 async def export_csv(db, person, office_id, month=None):
     person = await live_person(db, person)
     pantry = await get_pantry(db, person, office_id, month)
-    lines = [["Product", "Date", "Packs", "Price per pack (INR)", "Amount (INR)", "Receipt", "Entered by", "Entered at (IST)"]]
     names = await names_by_id(db)
+    bought = []
     for product in pantry["products"]:
         for row in await db.all("SELECT * FROM pantry_purchase WHERE product_id = ? AND deleted_at IS NULL AND purchased_on LIKE ? ORDER BY purchased_on, created_at", product["productId"], pantry["month"] + "%"):
             receipt = await db.get("SELECT purchase_id FROM pantry_receipt WHERE purchase_id = ? AND deleted_at IS NULL", row["id"])
-            lines.append([product["name"], row["purchased_on"], text(row["packs"]), row["price_per_pack"], calc.money(row["packs"], row["price_per_pack"]), "Yes" if receipt else "No", names.get(row["created_by"], "Unknown"), calc.format_when(row["created_at"])])
-    lines.append(["Office total", "", "", "", pantry["spend"], "", "", ""])
+            bought.append((product["name"], row, receipt))
+    payments = await db.all("SELECT * FROM credit_payment WHERE office_id = ? AND deleted_at IS NULL AND paid_on LIKE ? ORDER BY paid_on, created_at", office_id, pantry["month"] + "-%")
+    # Credit is spent when it is paid. With credit in the month, Amount holds
+    # only what was spent (purchases not on credit, and payments as rows of
+    # their own), so it adds up to the office total; credit purchases put their
+    # amount under On credit instead, with its own total. Without credit the
+    # file reads exactly as before.
+    credit = bool(payments) or any(row.get("on_credit") for _, row, _ in bought)
+    lines = [["Product", "Date", "Packs", "Price per pack (INR)", "Amount (INR)", "Receipt", "Entered by", "Entered at (IST)", *(["On credit (INR)", "Supplier"] if credit else [])]]
+    for name, row, receipt in bought:
+        amount = calc.money(row["packs"], row["price_per_pack"])
+        owed = bool(row.get("on_credit"))
+        lines.append([name, row["purchased_on"], text(row["packs"]), row["price_per_pack"], "" if credit and owed else amount, "Yes" if receipt else "No", names.get(row["created_by"], "Unknown"), calc.format_when(row["created_at"]),
+                      *([amount if owed else "", row.get("supplier") or ""] if credit else [])])
+    if credit:
+        for payment in payments:
+            lines.append([f"Payment to {payment['supplier']}", payment["paid_on"], "", "", payment["amount"], "Yes", names.get(payment["created_by"], "Unknown"), calc.format_when(payment["created_at"]), "", payment["supplier"]])
+        lines.append(["Bought on credit, spent when paid", "", "", "", "", "", "", "", pantry.get("creditBought") or "0.00", ""])
+    lines.append(["Office total", "", "", "", pantry["spend"], "", "", "", *(["", ""] if credit else [])])
     def cell(value):
         value = text(value)
         if re.search(r"^[\s\x00-\x1f]*[=+@-]|^[\t\r\n]", value):
