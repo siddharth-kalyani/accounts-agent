@@ -33,14 +33,22 @@ export async function extendedWorkflows({ page, browser, app }) {
   await office('Ahmedabad');
   await nav('Record');
   await nav('Product');
-  await page.locator('.record-form').getByLabel('Name', { exact: true }).fill('Browser oats');
-  await nav('Save');
-  await expect(page.locator('.record-form').getByLabel('Name', { exact: true })).toHaveValue('');
+  // The Product tab keeps the shared category list; products come from a bill.
+  assert.equal(await page.locator('.record-form').getByLabel('Name', { exact: true }).count(), 0);
+  await page.locator('.record-form').getByLabel('New category').fill('Browser grains');
+  await nav('Add');
+  await expect(page.locator('.category-list')).toContainText('Browser grains');
+  await nav('Purchase');
+  await page.locator('.purchase-line').first().getByRole('button', { name: 'New product', exact: true }).click();
+  await page.locator('.new-product').getByLabel('Product name', { exact: true }).fill('Browser oats');
+  await page.locator('.new-product').getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(page.locator('.new-product')).toHaveCount(0);
   await page.locator('.side').getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('Lookback months').fill('4');
   await page.getByLabel('Weekend weight').fill('0.3');
   // Before saving, the preview shows how run-out dates would move. Nothing is saved yet.
-  await expect(page.locator('.settings-preview')).toContainText(/→|No run-out date changes/);
+  // A product with no run-out date yet shows "Would run out"; one with a date shows old → new.
+  await expect(page.locator('.settings-preview')).toContainText(/→|Would run out|No run-out date changes/);
   await nav('Full day');
   await expect(page.getByLabel('Weekend weight')).toHaveValue('1');
   await page.getByLabel('Weekend weight').fill('0.3');
@@ -56,7 +64,8 @@ export async function extendedWorkflows({ page, browser, app }) {
   const stream = await csv.createReadStream();
   let content = '';
   for await (const chunk of stream) content += chunk;
-  assert.ok(content.includes('Coffee beans') && content.includes('25.50'));
+  // The bill typed a 90.00 total for 3 packs, so Coffee beans is 30.00 a pack.
+  assert.ok(content.includes('Coffee beans') && content.includes('30.00'));
   await nav('Charts');
   await expect(page.locator('main.page svg').first()).toBeVisible();
   await page.reload();

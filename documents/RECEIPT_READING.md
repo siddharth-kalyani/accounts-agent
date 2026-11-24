@@ -2,6 +2,22 @@
 
 The Record → Receipt tab uses the configured model to transcribe a receipt, then checks the printed evidence before proposing purchases. It does not use a supplier template, fixed column positions, product-specific quantity rules, or a second OCR service.
 
+## Phase 2 update (November 2026)
+
+**Cause of "the receipt could not be read":** after moving to Gemini 3, every receipt where the model first called `lookup_item` failed. Gemini 3 returns a `thought_signature` (in `extra_content.google`) on each tool call and rejects the next request with HTTP 400 ("Function call is missing a thought_signature") unless the call is sent back with it. `tool_calls()` rebuilt each call without that field. It now keeps it, and the chat stream reader does the same. This was reproduced against the live `gemini-3.8-flash` endpoint and confirmed fixed there. `test_receipt_products.py` locks it.
+
+**Other by default:** an unmatched line goes under the office's Other product (replaced the earlier "new product named as printed", November 2026). The person can pick another product from the flat list or discard the line. If the office has no Other yet, approval adds it in the same transaction as the purchases. Receipts never add a product named as printed: the server accepts a line's `newName` only when it is Other or an existing office product (ignoring case), and refuses anything else with `NEED_KNOWN_PRODUCT`.
+
+**Bill charges are kept (November 2026):** the net of the bill-level adjustments (delivery, handling, bill tax, less bill discounts) is stored on the draft as `charges`, with the printed `receiptTotal`. Review shows the bill total and the charges. On approval `spread_charges` adds them to the prices per pack in proportion to each line's amount (leftover paise on a single-pack line), so the purchases add up to the printed bill, for example ₹814 of items plus ₹12 of charges saves as ₹826. Review has a Bill charges box: the person can correct the figure (a misread tax summary or savings row), enter a discount as a negative amount, or clear it when the prices already include the charges. The draft keeps what is typed; approval reads it strictly (`parse_charges`, at most ₹1,000,000 either way; separators, spaces, ₹, INR and Rs are ignored, as `chargePaise` does on screen). Discarded lines take their own share by amount (`kept_share`), so a discarded ₹900 personal item leaves ₹45 of a ₹50 delivery off a ₹100 kept line. When the discarded lines were never on the bill (a duplicate or a misread row), the reviewer switches off "Discarded lines take their share" (`discardedShare: false`) and the kept products take all of the charges. A discount larger than the products being added, or a spread price over ₹1,000,000 per pack, is refused.
+
+**Charges and HSN codes:** online orders often print a "Delivery and other charges" row under each item. Those rows came through as products with no quantity, which blocked approval. The prompt now treats delivery, shipping, handling, platform, packing and other charges or fees as adjustments. `move_charge_lines` also moves any such unmatched row from lines to adjustments with its printed amount, so the total check counts it. An unreadable charge amount leaves the total unchecked. Matching ignores HSN/SAC codes.
+
+**MRP, GST and discount:** the tool also asks for `mrp` and `taxPercent`; `discount` was already collected as evidence. CGST and SGST halves are added (9% + 9% is 18). Unreadable values stay blank. They are editable on review, saved on the purchase and shown on Purchases. They are informational: price per pack still comes from the printed line amount, and spend is unchanged.
+
+**Supplier and pack size (later in November 2026):** the tool also returns the seller and the pack size; web lookups help match unknown brands to an office product. The model gets no category list. Review has no name box, no category picker and no GST or discount fields. See [Purchases and payables](PURCHASES_AND_PAYABLES.md).
+
+The checks and limits below still apply. Human review is still required.
+
 ## Handoff status — stopped at the user's request
 
 Implementation and testing stopped on 30 September 2026 because the user wanted to conserve their remaining usage. This document records the finished work and unfinished concerns so the next session can continue without repeating the investigation.

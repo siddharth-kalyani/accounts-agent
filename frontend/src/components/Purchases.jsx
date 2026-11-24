@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { api, indiaDate, rupee } from "../api.js";
 import { useFocusTrap } from "../focus.js";
 import { useMounted } from "../hooks.js";
-import { IconClose } from "../icons.jsx";
+import { IconClose, IconDownload, IconEdit, IconEye, IconTrash } from "../icons.jsx";
 import { DateField } from "./DateField.jsx";
+import { packSummary, PackPriceFields } from "./PurchaseFields.jsx";
 import { EmptyState } from "./Illustration.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 
@@ -94,7 +95,7 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
     try {
       await api(`/api/purchases/${editing.purchaseId}`, {
         method: "PUT",
-        body: { date: editing.date, packs: Number(editing.packs), pricePerPack: editing.price },
+        body: { date: editing.date, packs: Number(editing.packs), pricePerPack: String(editing.price ?? "").trim().replace(/,/g, "") },
       });
       setEditing(null);
       onToast?.("Purchase corrected.");
@@ -188,7 +189,11 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
           <article className="purchase-row" key={row.purchaseId}>
             <div>
               <strong>{row.product}</strong>
-              <p className="muted">{indiaDate(row.date)} · {row.packs} packs at {rupee(row.pricePerPack)}</p>
+              {row.category ? <span className="category-tag">{row.category}</span> : null}
+              {row.onCredit ? <span className="category-tag credit-tag">On credit</span> : null}
+              <p className="muted">{indiaDate(row.date)} · {row.packs} {row.packs === 1 ? "pack" : "packs"} at {rupee(row.pricePerPack)}{packSummary(row.packs, row.packSize, row.packUnit) ? ` · ${packSummary(row.packs, row.packSize, row.packUnit)}` : ""}</p>
+              {row.supplier ? <small className="muted">From {row.supplier}</small> : null}
+              {printedDetails(row) ? <small className="muted">{printedDetails(row)}</small> : null}
               <small className="muted">Entered by {row.enteredBy}</small>
               {row.receiptName ? <small className="muted">{row.receiptName}</small> : null}
             </div>
@@ -196,8 +201,8 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
             <div className="row-actions">
               {row.receiptName ? (
                 <>
-                  <button className="ghost" type="button" disabled={busy} onClick={() => openPreview(row)}>Preview receipt</button>
-                  <button className="ghost" type="button" disabled={busy} onClick={() => download(row)}>Download receipt</button>
+                  <button className="icon-button" type="button" disabled={busy} aria-label="Preview receipt" title="Preview receipt" onClick={() => openPreview(row)}><IconEye /></button>
+                  <button className="icon-button" type="button" disabled={busy} aria-label="Download receipt" title="Download receipt" onClick={() => download(row)}><IconDownload /></button>
                 </>
               ) : <span className="muted">No receipt</span>}
               {canWrite && !row.receiptName ? (
@@ -205,20 +210,21 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
                   <input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => attach(row, event.target.files?.[0])} />
                 </label>
               ) : null}
-              {canWrite ? <button className="ghost" type="button" onClick={() => setEditing(editing?.purchaseId === row.purchaseId ? null : { ...row, price: row.pricePerPack })}>Correct</button> : null}
-              {canWrite ? <button className="texty" type="button" onClick={() => removePurchase(row)}>Remove</button> : null}
+              {canWrite ? (
+                <button className="icon-button" type="button" aria-label="Correct" title="Correct this purchase" aria-expanded={editing?.purchaseId === row.purchaseId} onClick={() => setEditing(editing?.purchaseId === row.purchaseId ? null : { ...row, packs: String(row.packs), price: row.pricePerPack })}>
+                  <IconEdit />
+                </button>
+              ) : null}
+              {canWrite ? <button className="icon-button" type="button" aria-label="Remove" title="Remove this purchase" onClick={() => removePurchase(row)}><IconTrash /></button> : null}
             </div>
             {editing?.purchaseId === row.purchaseId ? (
               <form className="fields purchase-edit" onSubmit={saveCorrection}>
                 <label className="field">Date
                   <DateField value={editing.date} onChange={(date) => setEditing({ ...editing, date })} required />
                 </label>
-                <label className="field">Packs
-                  <input inputMode="numeric" value={editing.packs} onChange={(event) => setEditing({ ...editing, packs: event.target.value })} required />
-                </label>
-                <label className="field">Price per pack (INR)
-                  <input inputMode="decimal" value={editing.price} onChange={(event) => setEditing({ ...editing, price: event.target.value })} required />
-                </label>
+                <div className="field wide">
+                  <PackPriceFields packs={editing.packs} price={editing.price} label={editing.product} onChange={(patch) => setEditing((current) => ({ ...current, ...patch }))} />
+                </div>
                 <div className="field wide row-actions">
                   <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : "Save correction"}</button>
                   <button className="ghost" type="button" onClick={() => setEditing(null)}>Cancel</button>
@@ -234,7 +240,7 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
             <div className="card-head">
               <h2>{preview.name}</h2>
               <div className="row-actions">
-                <button className="ghost" type="button" onClick={downloadPreview}>Download receipt</button>
+                <button className="icon-button" type="button" aria-label="Download receipt" title="Download receipt" onClick={downloadPreview}><IconDownload /></button>
                 <button className="icon-button" type="button" aria-label="Close" title="Close" onClick={closePreview}><IconClose /></button>
               </div>
             </div>
@@ -253,4 +259,13 @@ function readBase64(file) {
     reader.onload = () => resolve(String(reader.result).split(",")[1]);
     reader.readAsDataURL(file);
   });
+}
+
+// MRP, GST and discount as printed on the receipt, when they were kept.
+function printedDetails(row) {
+  return [
+    row.mrp ? `MRP ${rupee(row.mrp)}` : "",
+    row.taxPercent ? `GST ${row.taxPercent}%` : "",
+    row.discount && Number(row.discount) > 0 ? `Discount ${rupee(row.discount)}` : "",
+  ].filter(Boolean).join(" · ");
 }

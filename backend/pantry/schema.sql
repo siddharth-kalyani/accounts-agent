@@ -37,8 +37,16 @@
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL,
       deleted_by TEXT,
-      deleted_at TEXT
+      deleted_at TEXT,
+      category TEXT
     );
+    CREATE TABLE IF NOT EXISTS product_category (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS product_category_name_lower ON product_category(lower(name));
     CREATE TABLE IF NOT EXISTS pantry_purchase (
       id TEXT PRIMARY KEY,
       product_id TEXT NOT NULL,
@@ -48,8 +56,39 @@
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL,
       deleted_by TEXT,
+      deleted_at TEXT,
+      mrp TEXT,
+      tax_percent TEXT,
+      discount TEXT,
+      pack_size TEXT,
+      pack_unit TEXT,
+      supplier TEXT,
+      on_credit INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS supplier (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS supplier_name_lower ON supplier(lower(name));
+    CREATE TABLE IF NOT EXISTS credit_payment (
+      id TEXT PRIMARY KEY,
+      office_id TEXT NOT NULL,
+      supplier TEXT NOT NULL,
+      paid_on TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      note TEXT,
+      blob_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      deleted_by TEXT,
       deleted_at TEXT
     );
+    CREATE INDEX IF NOT EXISTS credit_payment_office ON credit_payment(office_id, paid_on);
     CREATE TABLE IF NOT EXISTS pantry_count (
       id TEXT PRIMARY KEY,
       product_id TEXT NOT NULL,

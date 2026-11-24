@@ -1,16 +1,38 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, indiaDate, onHandAfter, packs, rupee, wholePacks } from "../api.js";
 import { useMounted } from "../hooks.js";
-import { IconFile } from "../icons.jsx";
+import { IconFile, IconNew, IconPlus, IconTrash } from "../icons.jsx";
+import { rememberSupplier } from "../suppliers.js";
+import { CategoryList } from "./CategoryMenu.jsx";
 import { DateField } from "./DateField.jsx";
-import { ProductMenu } from "./ProductMenu.jsx";
+import { OTHER, ProductMenu, otherProduct } from "./ProductMenu.jsx";
+import { CreditToggle, PackPriceFields, PackSizeFields, SupplierMenu } from "./PurchaseFields.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 
-// `onHand` is today's shelf count typed with a purchase; it is only sent once
-// someone changes it (`onHandTouched`), so an expected figure is never saved as a count.
-const empty = { kind: "receipt", name: "", productId: "", date: "", packs: "", price: "", onHand: "", onHandTouched: false };
 const KINDS = ["receipt", "purchase", "product"];
 const ON_HAND_ERROR = "On hand is a whole number of packs, zero or more.";
+const NEED_SUPPLIER = "Choose the supplier for a credit purchase.";
+
+// One product on the Purchase tab. `prefilled` is the price filled in from the
+// last purchase.
+let lineKeys = 0;
+function emptyLine() {
+  lineKeys += 1;
+  return { key: `line-${lineKeys}`, productId: "", packs: "", price: "", packSize: "", packUnit: "N.A", mrp: "", prefilled: "" };
+}
+
+// `onHand` is today's shelf count typed per product id, shown on the first card
+// of that product. Only a typed figure is sent, so an expected figure is never
+// saved as a count, and the figure sent is always the one on screen.
+function emptyBill(date) {
+  // Most pantry bills are on credit and cleared at month end.
+  return { date, supplier: "", onCredit: true, lines: [emptyLine()], onHand: {} };
+}
+
+// Typed amounts may carry thousands separators ("1,234.50"); the API takes plain numbers.
+function plainAmount(value) {
+  return String(value ?? "").trim().replace(/,/g, "");
+}
 
 export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, onToast, busy, loading, initialKind = "receipt" }) {
   const purchaseFileRef = useRef(null);
@@ -21,14 +43,14 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
   const dirtyRef = useRef(false);
   const revision = useRef(0);
   const mounted = useMounted();
-  const [form, setForm] = useState({ ...empty, kind: KINDS.includes(initialKind) ? initialKind : empty.kind, date: pantry?.today || todayIso() });
-  // What was just saved, so a run of purchases after one shopping trip is quick.
+  const [kind, setKind] = useState(KINDS.includes(initialKind) ? initialKind : "receipt");
+  const [bill, setBill] = useState(() => emptyBill(pantry?.today || todayIso()));
+  // What was just saved, so the next bill starts from a clear summary.
   const [lastSaved, setLastSaved] = useState(null);
-  const prefilledPrice = useRef("");
   const [receipt, setReceipt] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [fileError, setFileError] = useState("");
-  const [heldPurchase, setHeldPurchase] = useState(null);
+  const [billError, setBillError] = useState("");
   const [upload, setUpload] = useState(null);
   const [uploadPreview, setUploadPreview] = useState("");
   const [readError, setReadError] = useState("");
@@ -37,14 +59,14 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
   const [reading, setReading] = useState(null);
   // Receipt review: today's shelf count typed per product, keyed by product id.
   const [shelf, setShelf] = useState({});
-  const [onHandError, setOnHandError] = useState("");
+  // The "+" beside a product on the Purchase tab: a product added without leaving the bill.
+  const [newProduct, setNewProduct] = useState(null);
   const hintId = useId();
   const canWrite = Boolean(pantry?.canWrite);
 
   useEffect(() => {
     readingRef.current = reading;
   }, [reading]);
-
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -156,63 +178,125 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
     }, immediate);
   }
 
-  function changeDate(date) {
+  // Date, supplier and credit apply to the whole receipt.
+  function changeReceipt(patch, immediate) {
     const current = readingRef.current;
     if (!current?.result) return;
-    remember({ ...current, result: { ...current.result, date } }, false);
+    remember({ ...current, result: { ...current.result, ...patch } }, immediate);
   }
 
-  function choosePurchaseProduct(productId) {
+  function changeBillLine(key, patch) {
+    setBill((current) => ({ ...current, lines: current.lines.map((line) => (line.key === key ? { ...line, ...patch } : line)) }));
+    setBillError("");
+  }
+
+  function choosePurchaseProduct(key, productId) {
     const product = (pantry?.products || []).find((item) => item.productId === productId);
     const last = product?.latestPricePerPack ? String(product.latestPricePerPack) : "";
-    const untouched = !form.price || form.price === prefilledPrice.current;
-    if (untouched) prefilledPrice.current = last;
-    // A count typed for one product must not carry over to another.
-    setForm({ ...form, productId, price: untouched ? last : form.price, onHand: "", onHandTouched: false });
-    setOnHandError("");
+    setBill((current) => ({
+      ...current,
+      lines: current.lines.map((line) => {
+        if (line.key !== key) return line;
+        const untouched = !line.price || line.price === line.prefilled;
+        return { ...line, productId, price: untouched ? last : line.price, prefilled: untouched ? last : line.prefilled };
+      }),
+    }));
+    setBillError("");
   }
 
-  async function submit(event) {
+  function addBillLine() {
+    setBill((current) => ({ ...current, lines: [...current.lines, emptyLine()] }));
+  }
+
+  function removeBillLine(key) {
+    setBill((current) => ({ ...current, lines: current.lines.length > 1 ? current.lines.filter((line) => line.key !== key) : current.lines }));
+    if (newProduct?.lineKey === key) setNewProduct(null);
+  }
+
+  async function addNewProduct() {
+    if (!newProduct || newProduct.busy) return;
+    const name = newProduct.name.trim();
+    if (!name) {
+      setNewProduct({ ...newProduct, error: "Enter a product name." });
+      return;
+    }
+    setNewProduct({ ...newProduct, busy: true, error: "" });
+    try {
+      const saved = await api(`/api/offices/${officeId}/products`, {
+        method: "POST",
+        body: { name },
+      });
+      await onSaved?.();
+      if (!mounted.current) return;
+      // Whatever was typed meanwhile stays; only that line's product changes.
+      changeBillLine(newProduct.lineKey, { productId: saved.productId });
+      setNewProduct(null);
+      onToast?.(`Added ${saved.name}.`);
+    } catch (err) {
+      if (mounted.current) setNewProduct((current) => (current ? { ...current, busy: false, error: err.message } : current));
+    }
+  }
+
+
+  async function submitBill(event) {
     event.preventDefault();
-    // A purchase recorded here needs its receipt. (Receipts stay optional on
-    // the server: the assistant and receipt reading create purchases too, and
-    // an old purchase can still get a receipt from Purchases.)
-    if (form.kind === "purchase" && !receipt) {
-      setFileError("Attach the receipt for this purchase.");
+    // A bill recorded here needs its receipt. (Receipts stay optional on the
+    // server: the assistant and receipt reading create purchases too, and an
+    // old purchase can still get a receipt from Purchases.)
+    if (!receipt) {
+      setFileError("Attach the receipt for this bill.");
       purchaseFileRef.current?.closest(".field")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
     }
-    const counted = form.kind === "purchase" && form.onHandTouched && String(form.onHand).trim() !== "";
-    if (counted && wholePacks(form.onHand) == null) {
-      setOnHandError(ON_HAND_ERROR);
+    if (bill.onCredit && !bill.supplier.trim()) {
+      setBillError(NEED_SUPPLIER);
       return;
     }
-    setOnHandError("");
-    if (heldPurchase && form.kind === "purchase" && samePurchase(form, heldPurchase) && receipt) {
-      const ok = await onSubmit({ ...form, kind: "attach", purchaseId: heldPurchase.purchaseId }, receipt);
-      if (ok === true) {
-        clearPurchaseFile();
-        setHeldPurchase(null);
-        setForm({ ...empty, date: form.date || pantry?.today || todayIso(), kind: form.kind });
-      }
+    if (bill.lines.some((line) => !line.productId)) {
+      setBillError("Choose a product on each card, or remove the card.");
       return;
     }
-    if (heldPurchase && !samePurchase(form, heldPurchase)) setHeldPurchase(null);
-    const sent = { ...form, onHand: counted ? wholePacks(form.onHand) : null };
-    const result = await onSubmit(sent, form.kind === "purchase" ? receipt : null);
+    if (bill.lines.some((line) => !String(line.packs).trim() || !String(line.price).trim())) {
+      setBillError("Enter the price per pack and number of packs on each card.");
+      return;
+    }
+    if (bill.lines.some((line) => line.packUnit !== "N.A" && !String(line.packSize).trim())) {
+      setBillError("Enter the qty per pack, or set the unit to N.A.");
+      return;
+    }
+    // Today's count goes with the first card of each product, where its box is.
+    const first = {};
+    for (const line of bill.lines) first[line.productId] ??= line.key;
+    const typed = (productId) => String(bill.onHand[productId] ?? "").trim();
+    const counted = Object.keys(first).filter((productId) => typed(productId) !== "");
+    if (counted.some((productId) => wholePacks(typed(productId)) == null)) {
+      setBillError(ON_HAND_ERROR);
+      return;
+    }
+    setBillError("");
+    const result = await onSubmit({
+      kind: "bill",
+      date: bill.date,
+      supplier: bill.supplier.trim(),
+      onCredit: bill.onCredit,
+      lines: bill.lines.map((line) => ({
+        productId: line.productId,
+        packs: Number(line.packs),
+        pricePerPack: plainAmount(line.price),
+        packUnit: line.packUnit,
+        packSize: line.packUnit === "N.A" ? "" : String(line.packSize).trim(),
+        ...(plainAmount(line.mrp) ? { mrp: plainAmount(line.mrp) } : {}),
+        ...(first[line.productId] === line.key && typed(line.productId) !== "" ? { onHand: wholePacks(typed(line.productId)) } : {}),
+      })),
+    }, receipt);
     if (result === true) {
-      if (form.kind === "purchase") {
-        const product = (pantry?.products || []).find((item) => item.productId === form.productId);
-        setLastSaved({ name: product?.name || "the product", packs: form.packs, price: form.price, date: form.date, hadReceipt: Boolean(receipt), onHand: sent.onHand });
-      }
+      const names = bill.lines.map((line) => (pantry?.products || []).find((item) => item.productId === line.productId)?.name || "a product");
+      setLastSaved({ names, supplier: bill.supplier.trim(), onCredit: bill.onCredit, date: bill.date, total: billTotal(bill.lines) });
+      if (bill.supplier.trim()) rememberSupplier(bill.supplier.trim());
       clearPurchaseFile();
-      setHeldPurchase(null);
-      prefilledPrice.current = "";
-      // Keep the date: the next purchase is usually from the same trip.
-      setForm({ ...empty, date: form.kind === "purchase" ? form.date : pantry?.today || todayIso(), kind: form.kind });
-      setFileError("");
-    } else if (result?.purchaseId) {
-      setHeldPurchase({ purchaseId: result.purchaseId, productId: form.productId, date: form.date, packs: form.packs, price: form.price });
+      setNewProduct(null);
+      // Keep the date and supplier: the next bill is often from the same trip.
+      setBill({ ...emptyBill(bill.date), supplier: bill.supplier, onCredit: bill.onCredit });
     }
   }
 
@@ -329,43 +413,50 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
     }
     const latest = readingRef.current;
     const lines = (latest?.result?.lines || []).filter((line) => !line.discarded);
-    if (!lines.length) {
-      setReadError("Choose at least one line to add.");
+    const stop = (message) => {
+      setReadError(message);
       setSaving(false);
-      return;
-    }
-    if (lines.some((line) => !line.productId)) {
-      setReadError("Choose a product for each remaining line, or discard it.");
-      setSaving(false);
-      return;
-    }
+    };
+    if (!lines.length) return stop("Choose at least one line to add.");
+    const other = otherProduct((pantry?.products || []).filter((product) => !product.deletedAt));
     if (!latest.result.date || lines.some((line) => line.packs === "" || line.packs == null || line.pricePerPack === "" || line.pricePerPack == null)) {
-      setReadError("Enter a date, packs, and a price for each remaining line, or discard it.");
-      setSaving(false);
-      return;
+      return stop("Enter a date, packs, and a price for each remaining line, or discard it.");
     }
+    if (lines.some((line) => (line.packUnit || "N.A") !== "N.A" && !String(line.packSize ?? "").trim())) return stop("Enter the qty per pack, or set the unit to N.A.");
+    if (latest.result.onCredit && !String(latest.result.supplier || "").trim()) return stop(NEED_SUPPLIER);
     const kept = new Set(lines.map((line) => line.productId));
     const counts = Object.entries(shelf).filter(([productId, value]) => kept.has(productId) && String(value).trim() !== "");
-    if (counts.some(([, value]) => wholePacks(value) == null)) {
-      setReadError(ON_HAND_ERROR);
-      setSaving(false);
-      return;
-    }
+    if (counts.some(([, value]) => wholePacks(value) == null)) return stop(ON_HAND_ERROR);
     try {
       const saved = await api(`/api/offices/${officeId}/receipt-readings/${latest.readingId}/save`, {
         method: "POST",
         body: {
           date: latest.result.date,
+          supplier: String(latest.result.supplier || "").trim(),
+          onCredit: Boolean(latest.result.onCredit),
+          charges: plainAmount(latest.result.charges),
+          discardedShare: latest.result.discardedShare !== false,
           lines: lines.map((line) => ({
             id: line.id,
-            productId: line.productId,
+            // A line with no product goes under Other, added now if the office has none.
+            productId: line.productId || other?.productId || "",
+            ...(line.productId || other ? {} : { newName: OTHER }),
             packs: line.packs,
-            pricePerPack: line.pricePerPack,
+            pricePerPack: plainAmount(line.pricePerPack),
+            packSize: (line.packUnit || "N.A") === "N.A" ? "" : String(line.packSize ?? "").trim(),
+            packUnit: line.packUnit || "N.A",
+            mrp: plainAmount(line.mrp),
+            // GST and discount are no longer entered on review.
+            taxPercent: "",
+            discount: "",
           })),
           ...(counts.length ? { counts: counts.map(([productId, value]) => ({ productId, packs: wholePacks(value) })) } : {}),
         },
       });
-      onToast?.(counts.length ? "Purchases and today's stock added." : "Purchases added.");
+      const added = saved.productsAdded?.length || 0;
+      const productNote = added ? ` ${added} new ${added === 1 ? "product" : "products"} added.` : "";
+      onToast?.(`${counts.length ? "Purchases and today's stock added." : "Purchases added."}${productNote}`);
+      if (latest.result.supplier) rememberSupplier(String(latest.result.supplier).trim());
       const receiptError = saved.purchases?.find((purchase) => purchase.receiptError)?.receiptError;
       readingRef.current = null;
       setReading(null);
@@ -399,20 +490,21 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
   }
 
   const products = (pantry.products || []).filter((product) => !product.deletedAt);
+  const other = otherProduct(products);
   const kinds = [
     ["receipt", "Receipt"],
     ["purchase", "Purchase"],
     ["product", "Product"],
   ];
-  const lede = form.kind === "receipt"
+  const lede = kind === "receipt"
     ? "One receipt can add several purchases. Nothing is saved until you approve it."
-    : form.kind === "product"
-      ? `Adds a product at ${officeName || "this office"}.`
-      : `${officeName}. Attach the receipt for each purchase.`;
+    : kind === "product"
+      ? "Product categories, shared by every office. Add one here."
+      : `${officeName}. One bill, its receipt, and every product on it.`;
   const visibleLines = (reading?.result?.lines || []).filter((line) => !line.discarded);
   const alert = readError || (reading?.status === "failed" ? reading.error : "");
   const showUpload = !reading || reading.status === "failed";
-  // One on-hand box per product on a receipt, on its first line, counting every line of it.
+  // One on-hand box per product, on its first line, counting every line of it.
   const firstLine = {};
   const addedBy = {};
   for (const line of visibleLines) {
@@ -420,8 +512,14 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
     firstLine[line.productId] ??= line.id;
     addedBy[line.productId] = (addedBy[line.productId] || 0) + (Number(line.packs) || 0);
   }
-  const chosen = products.find((product) => product.productId === form.productId);
-  const onHandValue = form.onHandTouched ? form.onHand : chosen ? String(onHandAfter(chosen, form.date, form.packs)) : "";
+  const billFirst = {};
+  const billAdded = {};
+  for (const line of bill.lines) {
+    if (!line.productId) continue;
+    billFirst[line.productId] ??= line.key;
+    billAdded[line.productId] = (billAdded[line.productId] || 0) + (Number(line.packs) || 0);
+  }
+  const total = billTotal(bill.lines);
 
   return (
     <section className="card record-card">
@@ -432,89 +530,165 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
         </div>
       </div>
       <div className="choices" role="group" aria-label="What to record">
-        {kinds.map(([kind, label]) => (
-          <button
-            key={kind}
-            type="button"
-            className="choice"
-            aria-pressed={form.kind === kind}
-            onClick={() => setForm({ ...form, kind })}
-          >
+        {kinds.map(([value, label]) => (
+          <button key={value} type="button" className="choice" aria-pressed={kind === value} onClick={() => setKind(value)}>
             {label}
           </button>
         ))}
       </div>
-      {reading && form.kind !== "receipt" ? <p className="note">A receipt is waiting on the Receipt tab.</p> : null}
+      {reading && kind !== "receipt" ? <p className="note">A receipt is waiting on the Receipt tab.</p> : null}
 
-      {form.kind === "receipt" ? (
+      {kind === "receipt" ? (
         <div className="receipt-review">
           {reading?.status === "reading" ? (
             <p className="receipt-wait" role="status" aria-live="polite">Reading the receipt…</p>
           ) : null}
           {reading?.status === "ready" && reading.result ? (
             <div className="fields">
-              {reading.fileName ? <p className="note">{reading.fileName}</p> : null}
-              {reading.result.note ? <p className="note">{reading.result.note}</p> : null}
-              {reading.result.note ? <p className="note">Editing packs or price does not redo this check.</p> : null}
+              {reading.fileName ? <p className="note field wide receipt-file">{reading.fileName}</p> : null}
+              {reading.result.note ? <p className="note field wide">{reading.result.note} Editing packs or price does not redo this check.</p> : null}
               <label className="field">Date
-                <DateField max={pantry.today} value={reading.result.date || ""} onChange={changeDate} />
+                <DateField max={pantry.today} value={reading.result.date || ""} onChange={(date) => changeReceipt({ date }, false)} />
               </label>
+              <div className="field">
+                <span>Supplier</span>
+                <SupplierMenu value={reading.result.supplier || ""} label="Supplier on this receipt" onChange={(supplier) => changeReceipt({ supplier }, true)} />
+              </div>
+              <div className="field wide">
+                <CreditToggle checked={reading.result.onCredit} onChange={(onCredit) => changeReceipt({ onCredit }, true)} />
+              </div>
               <div className="field wide receipt-lines">
-                {visibleLines.length ? visibleLines.map((line) => (
-                  <article key={line.id} className={`receipt-line${line.productId ? "" : " unmatched"}`}>
-                    <div className="receipt-line-head">
-                      <strong>{line.printed}</strong>
-                      <button className="texty" type="button" onClick={() => changeLine(line.id, { discarded: true }, true)}>Discard</button>
-                    </div>
-                    {line.lineTotal ? <p className="note">Printed line amount: {rupee(line.lineTotal)}</p> : null}
-                    {line.note ? <p className="note" role="status">{line.note}</p> : null}
-                    {line.productId ? null : <p className="note">Not one of this office's products. Add it on the Product tab, then choose it here.</p>}
-                    <div className="field">
-                      <span>Product</span>
-                      <ProductMenu
-                        products={products}
-                        value={line.productId}
-                        label={`Product for ${line.printed}`}
-                        onChange={(productId) => {
-                          const product = products.find((item) => item.productId === productId);
-                          changeLine(line.id, {
-                            productId: productId || "",
-                            productName: product?.name || "",
-                            matched: Boolean(productId),
-                          }, true);
-                        }}
-                      />
-                    </div>
-                    <div className="fields">
-                      <label className="field">Packs
-                        <input inputMode="numeric" value={line.packs} onChange={(event) => changeLine(line.id, { packs: event.target.value }, false)} />
-                      </label>
-                      <label className="field">Price per pack (INR)
-                        <input inputMode="decimal" value={line.pricePerPack} onChange={(event) => changeLine(line.id, { pricePerPack: event.target.value }, false)} />
-                      </label>
-                    </div>
-                    {line.productId && firstLine[line.productId] === line.id ? (
+                {visibleLines.length ? visibleLines.map((line) => {
+                  const name = line.productName || line.printed;
+                  const counts = line.productId && firstLine[line.productId] === line.id;
+                  return (
+                    <article key={line.id} className={`receipt-line${line.productId ? "" : " unmatched"}`}>
+                      <div className="receipt-line-head">
+                        <strong>{line.printed}</strong>
+                        <span className="line-head-end">
+                          {line.lineTotal ? <small className="muted">Printed {rupee(line.lineTotal)}</small> : null}
+                          <button className="icon-button" type="button" aria-label="Discard" title="Discard this line" onClick={() => changeLine(line.id, { discarded: true }, true)}>
+                            <IconTrash />
+                          </button>
+                        </span>
+                      </div>
+                      {line.note ? <p className="note" role="status">{line.note}</p> : null}
                       <div className="fields">
-                        <label className="field">On hand now (packs)
-                          <input
-                            inputMode="numeric"
-                            autoComplete="off"
-                            aria-describedby={`${hintId}-line-${line.id}`}
-                            value={shelf[line.productId] ?? String(onHandAfter(products.find((item) => item.productId === line.productId), reading.result.date, addedBy[line.productId]))}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setShelf((current) => ({ ...current, [line.productId]: value }));
+                        <div className="field wide">
+                          <span>Product</span>
+                          <ProductMenu
+                            products={products}
+                            value={line.productId || other?.productId || ""}
+                            label={`Product for ${line.printed}`}
+                            withOther
+                            onChange={(productId) => {
+                              const product = products.find((item) => item.productId === productId);
+                              changeLine(line.id, {
+                                productId: productId || "",
+                                productName: product?.name || "",
+                                matched: Boolean(productId),
+                                newName: productId ? "" : OTHER,
+                              }, true);
                             }}
                           />
+                        </div>
+                      </div>
+                      <div className="fields line-figures">
+                        <PackSizeFields compact size={line.packSize} unit={line.packUnit} label={name} onChange={(patch) => changeLine(line.id, patch, patch.packUnit !== line.packUnit)} />
+                        <PackPriceFields
+                          bare
+                          packs={line.packs ?? ""}
+                          price={line.pricePerPack ?? ""}
+                          initialTotal={line.lineTotal}
+                          label={name}
+                          onChange={(patch) => changeLine(line.id, {
+                            ...("packs" in patch ? { packs: patch.packs } : {}),
+                            ...("price" in patch ? { pricePerPack: patch.price } : {}),
+                          }, false)}
+                        />
+                      </div>
+                      <div className="fields line-extras">
+                        <label className="field">MRP (INR)
+                          <input inputMode="decimal" autoComplete="off" value={line.mrp ?? ""} onChange={(event) => changeLine(line.id, { mrp: event.target.value }, false)} />
                         </label>
+                        {counts ? (
+                          <label className="field">On hand now (packs)
+                            <input
+                              inputMode="numeric"
+                              autoComplete="off"
+                              aria-describedby={`${hintId}-line-${line.id}`}
+                              value={shelf[line.productId] ?? String(onHandAfter(products.find((item) => item.productId === line.productId), reading.result.date, addedBy[line.productId]))}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setShelf((current) => ({ ...current, [line.productId]: value }));
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                      {counts ? (
                         <p className="field-hint on-hand-hint" id={`${hintId}-line-${line.id}`}>
                           {shelfHint(products.find((item) => item.productId === line.productId), shelf[line.productId] !== undefined)}
                         </p>
-                      </div>
-                    ) : line.productId ? <p className="note">On hand for {line.productName || "this product"} is on its first line.</p> : null}
-                  </article>
-                )) : <p className="note">No lines left on this receipt.</p>}
+                      ) : null}
+                    </article>
+                  );
+                }) : <p className="note">No lines left on this receipt.</p>}
               </div>
+              {visibleLines.length ? (() => {
+                const items = Math.round(Number(billTotal(visibleLines.map((line) => ({ packs: line.packs, price: line.pricePerPack })))) * 100);
+                const discarded = (reading.result.lines || []).filter((line) => line.discarded).reduce((sum, line) => sum + linePaise(line), 0);
+                const charges = chargePaise(reading.result.charges);
+                const shared = reading.result.discardedShare !== false;
+                // As on the server: lines discarded from the bill take their own share of the charges,
+                // unless they were never on it (a duplicate or a misread row).
+                const share = shared && charges && discarded > 0 && items > 0 ? Math.round((charges * items) / (items + discarded)) : charges;
+                const total = (items + share) / 100;
+                return (
+                  <div className="field wide receipt-sum">
+                    <label className="field receipt-charges">Bill charges (INR)
+                      <input
+                        inputMode="decimal"
+                        autoComplete="off"
+                        aria-describedby={`${hintId}-charges`}
+                        value={reading.result.charges ?? ""}
+                        onChange={(event) => changeReceipt({ charges: event.target.value }, false)}
+                      />
+                    </label>
+                    <small className="field-hint" id={`${hintId}-charges`}>
+                      Delivery and other charges on the bill, less bill discounts (enter a discount as -20). They are spread over the prices when you add the purchases. Clear the box if the prices already include them.
+                      {share && share !== charges ? ` The products you add take ${rupee((share / 100).toFixed(2))} of them; discarded lines take the rest.` : ""}
+                    </small>
+                    {charges && discarded > 0 ? (
+                      <label className="switch" htmlFor={`${hintId}-share`}>
+                        <input
+                          id={`${hintId}-share`}
+                          type="checkbox"
+                          role="switch"
+                          checked={shared}
+                          onChange={(event) => changeReceipt({ discardedShare: event.target.checked }, true)}
+                        />
+                        <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+                        <span>Discarded lines take their share</span>
+                      </label>
+                    ) : null}
+                    <p className="bill-total">
+                      <span className="muted">Bill total</span> <strong>{rupee(total.toFixed(2))}</strong>
+                      {reading.result.receiptTotal && Number(reading.result.receiptTotal) !== total ? <small className="muted"> Printed {rupee(reading.result.receiptTotal)}</small> : null}
+                    </p>
+                    {share ? (
+                      <small className="field-hint">
+                        Items {rupee((items / 100).toFixed(2))} {share > 0 ? "+" : "−"} {rupee((Math.abs(share) / 100).toFixed(2))} bill charges.
+                      </small>
+                    ) : null}
+                    {share && items <= 0 ? (
+                      <p className="error" role="alert">The products being added have no price to spread the bill charges over. Check the prices or clear the charges.</p>
+                    ) : share && items + share <= 0 ? (
+                      <p className="error" role="alert">The bill discount is more than the products being added. Check the bill charges.</p>
+                    ) : null}
+                  </div>
+                );
+              })() : null}
               <div className="field wide receipt-actions">
                 <button className="solid" type="button" onClick={addPurchases} disabled={saving}>{saving ? "Saving…" : "Add these purchases"}</button>
                 <button className="ghost" type="button" onClick={clearReading}>Clear this receipt</button>
@@ -556,112 +730,204 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
         </div>
       ) : null}
 
-      {form.kind === "purchase" || form.kind === "product" ? (
-        <form className="record-form" onSubmit={submit}>
-          {form.kind === "purchase" && lastSaved ? (
+      {kind === "product" ? (
+        <CategoryList officeId={officeId} onToast={onToast} />
+      ) : null}
+
+      {kind === "purchase" ? (
+        <form className="record-form" onSubmit={submitBill} noValidate>
+          {lastSaved ? (
             <div className="saved-summary" role="status">
               <p>
-                <strong>Saved.</strong> {lastSaved.packs} {Number(lastSaved.packs) === 1 ? "pack" : "packs"} of {lastSaved.name} at {rupee(lastSaved.price)} on {indiaDate(lastSaved.date)}
-                {lastSaved.hadReceipt ? ", with its receipt." : "."}
-                {lastSaved.onHand != null ? ` On hand now ${packs(lastSaved.onHand)}.` : ""}
+                <strong>Saved.</strong> {lastSaved.names.length === 1 ? lastSaved.names[0] : `${lastSaved.names.length} products`}
+                {lastSaved.supplier ? ` from ${lastSaved.supplier}` : ""} on {indiaDate(lastSaved.date)}, {rupee(lastSaved.total)}
+                {lastSaved.onCredit ? " on credit." : "."}
               </p>
-              <p className="note">Add the next one below. The date stays the same.</p>
+              <p className="note">Add the next bill below. The date and supplier stay the same.</p>
             </div>
           ) : null}
           <div className="fields">
-            {form.kind === "purchase" ? (
-              <div className="field wide">
-                <span>Receipt <span className="required-mark" aria-hidden="true">*</span><span className="sr-only">, required</span></span>
-                <label
-                  className={`drop${fileError && !receipt ? " drop-missing" : ""}`}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    takeFile(event.dataTransfer.files?.[0], "purchase");
-                  }}
-                >
-                  <input
-                    ref={purchaseFileRef}
-                    className="sr-only"
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png"
-                    onChange={(event) => takeFile(event.target.files?.[0], "purchase")}
-                    aria-required="true"
-                    aria-invalid={Boolean(fileError && !receipt)}
-                  />
-                  <IconFile />
-                  <span>{receipt ? receipt.fileName : "Drop a PDF, JPEG, or PNG, or browse"}</span>
-                  <small>Required. Up to 10 MB.</small>
-                </label>
-                {previewUrl && receipt?.contentType?.startsWith("image/") ? <img className="receipt-preview" src={previewUrl} alt="Receipt preview" /> : null}
-                {previewUrl && receipt?.contentType === "application/pdf" ? <iframe className="receipt-frame" title={receipt.fileName} src={previewUrl} /> : null}
-                {receipt ? <button className="texty" type="button" onClick={clearPurchaseFile}>Remove receipt</button> : null}
-                {heldPurchase ? <p className="note">The purchase is saved. Try the receipt again, or attach it from Purchases and receipts.</p> : null}
-                {fileError ? <p className="error" role="alert">{fileError}</p> : null}
-              </div>
-            ) : null}
-            {form.kind === "product" ? (
-              <label className="field wide">Name
-                <input value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-              </label>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <label className="field wide">Product
-                <select value={form.productId} onChange={(event) => choosePurchaseProduct(event.target.value)} required>
-                  <option value="">Choose a product</option>
-                  {products.map((product) => (
-                    <option key={product.productId} value={product.productId}>{product.name}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <label className="field">Date
-                <DateField max={pantry.today} value={form.date} onChange={(date) => setForm({ ...form, date })} required />
-              </label>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <label className="field">Packs
-                <input inputMode="numeric" value={form.packs} onChange={(event) => setForm({ ...form, packs: event.target.value })} required />
-              </label>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <label className="field wide">Price per pack (INR)
-                <input inputMode="decimal" value={form.price} onChange={(event) => { prefilledPrice.current = ""; setForm({ ...form, price: event.target.value }); }} required />
-              </label>
-            ) : null}
-            {form.kind === "purchase" && prefilledPrice.current && prefilledPrice.current === form.price ? (
-              <p className="note field wide">Filled in from the last price this month. Change it if the receipt differs.</p>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <label className="field">On hand now (packs)
-                <input
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={onHandValue}
-                  disabled={!chosen}
-                  aria-describedby={`${hintId}-onhand`}
-                  aria-invalid={Boolean(onHandError) || undefined}
-                  onChange={(event) => {
-                    setOnHandError("");
-                    setForm({ ...form, onHand: event.target.value, onHandTouched: true });
-                  }}
-                />
-              </label>
-            ) : null}
-            {form.kind === "purchase" ? (
-              <p className="field-hint on-hand-hint" id={`${hintId}-onhand`}>{shelfHint(chosen, form.onHandTouched)}</p>
-            ) : null}
-            {form.kind === "purchase" && onHandError ? <p className="error field wide" role="alert">{onHandError}</p> : null}
             <div className="field wide">
-              <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : heldPurchase ? "Try the receipt again" : "Save"}</button>
+              <span>Receipt <span className="required-mark" aria-hidden="true">*</span><span className="sr-only">, required</span></span>
+              <label
+                className={`drop${fileError && !receipt ? " drop-missing" : ""}`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  takeFile(event.dataTransfer.files?.[0], "purchase");
+                }}
+              >
+                <input
+                  ref={purchaseFileRef}
+                  className="sr-only"
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  onChange={(event) => takeFile(event.target.files?.[0], "purchase")}
+                  aria-required="true"
+                  aria-invalid={Boolean(fileError && !receipt)}
+                />
+                <IconFile />
+                <span>{receipt ? receipt.fileName : "Drop a PDF, JPEG, or PNG, or browse"}</span>
+                <small>Required. Up to 10 MB.</small>
+              </label>
+              {previewUrl && receipt?.contentType?.startsWith("image/") ? <img className="receipt-preview" src={previewUrl} alt="Receipt preview" /> : null}
+              {previewUrl && receipt?.contentType === "application/pdf" ? <iframe className="receipt-frame" title={receipt.fileName} src={previewUrl} /> : null}
+              {receipt ? <button className="texty" type="button" onClick={clearPurchaseFile}>Remove receipt</button> : null}
+              {fileError ? <p className="error" role="alert">{fileError}</p> : null}
+            </div>
+            <label className="field">Date
+              <DateField max={pantry.today} value={bill.date} onChange={(date) => setBill((current) => ({ ...current, date }))} required />
+            </label>
+            <div className="field">
+              <span>Supplier</span>
+              <SupplierMenu value={bill.supplier} label="Supplier on this bill" onChange={(supplier) => { setBill((current) => ({ ...current, supplier })); setBillError(""); }} />
+            </div>
+            <div className="field wide">
+              <CreditToggle checked={bill.onCredit} onChange={(onCredit) => { setBill((current) => ({ ...current, onCredit })); setBillError(""); }} />
+            </div>
+            <div className="field wide receipt-lines">
+              {bill.lines.map((line, index) => {
+                const chosen = products.find((product) => product.productId === line.productId);
+                const title = chosen?.name || `Product ${index + 1}`;
+                const showCount = line.productId && billFirst[line.productId] === line.key;
+                const onHandTouched = Boolean(line.productId) && bill.onHand[line.productId] !== undefined;
+                const onHandValue = onHandTouched ? bill.onHand[line.productId] : chosen ? String(onHandAfter(chosen, bill.date, billAdded[line.productId])) : "";
+                return (
+                  <article key={line.key} className="receipt-line purchase-line">
+                    <div className="receipt-line-head">
+                      <strong>{title}</strong>
+                      {bill.lines.length > 1 ? (
+                        <button className="icon-button" type="button" aria-label={`Remove ${title}`} title="Remove this product" onClick={() => removeBillLine(line.key)}>
+                          <IconTrash />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="field">
+                      <span id={`${hintId}-${line.key}-product`}>Product</span>
+                      <div className="product-row">
+                        <select aria-labelledby={`${hintId}-${line.key}-product`} value={line.productId} onChange={(event) => choosePurchaseProduct(line.key, event.target.value)}>
+                          <option value="">Choose a product</option>
+                          {products.map((product) => <option key={product.productId} value={product.productId}>{product.name}</option>)}
+                        </select>
+                        <button
+                          className="icon-button add-product"
+                          type="button"
+                          aria-label="New product"
+                          title="New product"
+                          aria-expanded={newProduct?.lineKey === line.key}
+                          onClick={() => setNewProduct(newProduct?.lineKey === line.key ? null : { lineKey: line.key, name: "", busy: false, error: "" })}
+                        >
+                          <IconNew size={20} />
+                        </button>
+                      </div>
+                    </div>
+                    {newProduct?.lineKey === line.key ? (
+                      <div className="new-product">
+                        <strong>New product at {officeName || "this office"}</strong>
+                        <div className="fields">
+                          <label className="field">Product name
+                            <input
+                              value={newProduct.name}
+                              maxLength={120}
+                              autoFocus
+                              autoComplete="off"
+                              onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value, error: "" })}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  addNewProduct();
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {newProduct.error ? <p className="error" role="alert">{newProduct.error}</p> : null}
+                        <div className="row-actions">
+                          <button className="solid small" type="button" onClick={addNewProduct} disabled={newProduct.busy}>{newProduct.busy ? "Saving…" : "Save product"}</button>
+                          <button className="ghost small" type="button" onClick={() => setNewProduct(null)} disabled={newProduct.busy}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <PackSizeFields size={line.packSize} unit={line.packUnit} label={title} onChange={(patch) => changeBillLine(line.key, patch)} />
+                    <PackPriceFields
+                      packs={line.packs}
+                      price={line.price}
+                      label={title}
+                      onChange={(patch) => changeBillLine(line.key, { ...patch, ...("price" in patch ? { prefilled: line.prefilled === patch.price ? line.prefilled : "" } : {}) })}
+                    />
+                    {line.prefilled && line.prefilled === line.price ? <p className="note">Price filled in from the last price this month. Change it if the bill differs.</p> : null}
+                    <div className="fields">
+                      <label className="field">MRP (INR)
+                        <input inputMode="decimal" autoComplete="off" value={line.mrp} onChange={(event) => changeBillLine(line.key, { mrp: event.target.value })} />
+                      </label>
+                      {showCount || !line.productId ? (
+                        <label className="field">On hand now (packs)
+                          <input
+                            inputMode="numeric"
+                            autoComplete="off"
+                            value={onHandValue}
+                            disabled={!chosen}
+                            aria-describedby={`${hintId}-${line.key}-onhand`}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setBill((current) => ({ ...current, onHand: { ...current.onHand, [line.productId]: value } }));
+                              setBillError("");
+                            }}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                    {showCount || !line.productId ? (
+                      <p className="field-hint on-hand-hint" id={`${hintId}-${line.key}-onhand`}>{shelfHint(chosen, onHandTouched)}</p>
+                    ) : <p className="note">On hand for {chosen?.name || "this product"} is on its first card.</p>}
+                  </article>
+                );
+              })}
+              <button className="ghost with-icon add-line" type="button" onClick={addBillLine}>
+                <IconPlus /> Add product
+              </button>
+            </div>
+            <p className="field wide bill-total">
+              <span className="muted">Bill total</span> <strong>{rupee(total)}</strong>
+              {bill.onCredit ? <span className="muted"> on credit</span> : null}
+            </p>
+            {billError ? <p className="error field wide" role="alert">{billError}</p> : null}
+            <div className="field wide">
+              <button className="solid" type="submit" disabled={busy}>{busy ? "Saving…" : bill.lines.length > 1 ? `Save ${bill.lines.length} purchases` : "Save"}</button>
             </div>
           </div>
         </form>
       ) : null}
-
     </section>
   );
+}
+
+// A draft line's amount in paise: packs times price, else the printed line total.
+function linePaise(line) {
+  const count = Number(line.packs);
+  const each = Number(plainAmount(line.pricePerPack));
+  if (Number.isInteger(count) && count > 0 && plainAmount(line.pricePerPack) !== "" && Number.isFinite(each)) return count * Math.round(each * 100);
+  const printed = Number(plainAmount(line.lineTotal));
+  return plainAmount(line.lineTotal) !== "" && Number.isFinite(printed) ? Math.round(printed * 100) : 0;
+}
+
+// Bill charges as typed, in paise; anything unreadable counts as none. Read as
+// the server reads them (`charge_text` and `bill_charges` in receipt_read.py):
+// separators, spaces, ₹, INR and Rs are ignored, and the size is rounded before the sign.
+function chargePaise(value) {
+  const match = /^([-+]?)(\d+(?:\.\d+)?)$/.exec(String(value ?? "").replace(/[,\s₹]|INR|Rs\.?/gi, ""));
+  if (!match) return 0;
+  const paise = Math.floor(Number(match[2]) * 100 + 0.5);
+  return match[1] === "-" ? -paise : paise;
+}
+
+function billTotal(lines) {
+  const paise = lines.reduce((sum, line) => {
+    const count = Number(line.packs);
+    const each = Number(String(line.price).replace(/,/g, ""));
+    return Number.isInteger(count) && count > 0 && Number.isFinite(each) ? sum + count * Math.round(each * 100) : sum;
+  }, 0);
+  return (paise / 100).toFixed(2);
 }
 
 // What the on-hand box means. It is prefilled with what the pantry expects once
@@ -676,18 +942,22 @@ function shelfHint(product, touched) {
 function patchBody(next) {
   return {
     date: next.result?.date || "",
+    supplier: next.result?.supplier || "",
+    onCredit: Boolean(next.result?.onCredit),
+    charges: next.result?.charges ?? "",
+    discardedShare: next.result?.discardedShare !== false,
     lines: (next.result?.lines || []).map((line) => ({
       id: line.id,
       productId: line.productId || "",
+      newName: line.productId ? "" : OTHER,
       packs: line.packs ?? "",
       pricePerPack: line.pricePerPack ?? "",
+      packSize: line.packSize ?? "",
+      packUnit: line.packUnit || "N.A",
+      mrp: line.mrp ?? "",
       discarded: Boolean(line.discarded),
     })),
   };
-}
-
-function samePurchase(form, held) {
-  return form.productId === held.productId && form.date === held.date && String(form.packs) === String(held.packs) && String(form.price) === String(held.price);
 }
 
 function todayIso() {

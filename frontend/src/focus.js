@@ -24,6 +24,8 @@ export function useFocusTrap(active, onEscape, initial) {
 
     function onKey(event) {
       if (event.key === "Escape") {
+        // A small inline box marked data-escape-local closes itself first.
+        if (event.target instanceof Element && event.target.closest("[data-escape-local]")) return;
         event.preventDefault();
         event.stopPropagation();
         escapeRef.current?.();

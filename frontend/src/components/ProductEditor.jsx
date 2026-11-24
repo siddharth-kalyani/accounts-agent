@@ -1,11 +1,13 @@
 import { useId, useRef, useState } from "react";
 import { api, countNote, shelfEstimate, wholePacks } from "../api.js";
 import { IconEdit } from "../icons.jsx";
+import { CategoryMenu } from "./CategoryMenu.jsx";
 import { Modal } from "./Modal.jsx";
 
 // The edit button on a Stock row and its dialog. Today's stock comes first
-// because it is what people change most, then the warning days, then the name.
-export function ProductEditor({ product, onSaved, onToast }) {
+// because it is what people change most, then the warning days, then the name
+// and category.
+export function ProductEditor({ product, officeId, onSaved, onToast }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -18,12 +20,12 @@ export function ProductEditor({ product, onSaved, onToast }) {
       >
         <IconEdit />
       </button>
-      {open ? <EditDialog product={product} onClose={() => setOpen(false)} onSaved={onSaved} onToast={onToast} /> : null}
+      {open ? <EditDialog product={product} officeId={officeId} onClose={() => setOpen(false)} onSaved={onSaved} onToast={onToast} /> : null}
     </>
   );
 }
 
-function EditDialog({ product, onClose, onSaved, onToast }) {
+function EditDialog({ product, officeId, onClose, onSaved, onToast }) {
   const countRef = useRef(null);
   const ids = useId();
   // Prefilled with today's count, or the expected shelf. Saved as today's count only once changed.
@@ -31,11 +33,13 @@ function EditDialog({ product, onClose, onSaved, onToast }) {
   const [counted, setCounted] = useState(false);
   const [warning, setWarning] = useState(String(product.warningEffectiveDays));
   const [name, setName] = useState(product.name);
+  const [category, setCategory] = useState(product.category || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const renamed = name.trim() !== product.name;
   const rewarned = String(warning).trim() !== String(product.warningEffectiveDays);
-  const dirty = counted || renamed || rewarned;
+  const recategorized = category !== (product.category || "");
+  const dirty = counted || renamed || rewarned || recategorized;
 
   async function save(event) {
     event.preventDefault();
@@ -64,10 +68,10 @@ function EditDialog({ product, onClose, onSaved, onToast }) {
     try {
       await api(`/api/products/${product.productId}`, {
         method: "PATCH",
-        body: { name: name.trim(), warningEffectiveDays: days, ...(counted ? { onHand: packs } : {}) },
+        body: { name: name.trim(), warningEffectiveDays: days, ...(counted ? { onHand: packs } : {}), ...(recategorized ? { category: category || null } : {}) },
       });
       await onSaved();
-      onToast?.(counted && !renamed && !rewarned ? `Today's stock saved for ${name.trim()}.` : `${name.trim()} saved.`);
+      onToast?.(counted && !renamed && !rewarned && !recategorized ? `Today's stock saved for ${name.trim()}.` : `${name.trim()} saved.`);
       onClose();
     } catch (err) {
       setError(err.message);
@@ -113,6 +117,9 @@ function EditDialog({ product, onClose, onSaved, onToast }) {
         </div>
         <label className="field">Product name
           <input value={name} maxLength={120} autoComplete="off" onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="field">Category
+          <CategoryMenu native value={category} officeId={officeId} label={`Category for ${product.name}`} onChange={setCategory} />
         </label>
         {error ? <p className="error" role="alert">{error}</p> : null}
         <div className="modal-actions">

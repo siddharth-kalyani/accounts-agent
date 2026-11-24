@@ -3,7 +3,7 @@ import base64
 import re
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import JSONResponse, Response
-from . import accounts as a, inventory as i, conversations as c, entra, chat, receipt_read
+from . import accounts as a, inventory as i, conversations as c, entra, chat, receipt_read, payables, suppliers
 from .core import HttpError
 from .http import clear_auth_cookies
 from .compat import text
@@ -145,7 +145,19 @@ async def export(request: Request, office_id: str):
 @router.post("/api/offices/{office_id}/products", status_code=201)
 async def create_product(request: Request, office_id: str):
     db, actor, body = context(request)
-    return await i.create_product(db, actor, office_id, body.get("name"))
+    return await i.create_product(db, actor, office_id, body.get("name"), body.get("category"))
+
+
+@router.get("/api/categories")
+async def categories(request: Request):
+    db, actor, _ = context(request)
+    return {"categories": await i.list_categories(db, actor)}
+
+
+@router.post("/api/offices/{office_id}/categories", status_code=201)
+async def create_category(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await i.create_category(db, actor, office_id, body.get("name"))
 
 
 @router.patch("/api/products/{product_id}")
@@ -170,6 +182,43 @@ async def restore_product(request: Request, product_id: str):
 async def create_purchase(request: Request, office_id: str):
     db, actor, body = context(request)
     return await i.create_purchase(db, actor, office_id, body, decode_receipt(body.get("receipt")), request.headers.get("idempotency-key"))
+
+
+@router.post("/api/offices/{office_id}/purchases/batch", status_code=201)
+async def create_purchases(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await i.create_purchases(db, actor, office_id, body, decode_receipt(body.get("receipt")), request.headers.get("idempotency-key"))
+
+
+@router.get("/api/suppliers")
+async def supplier_list(request: Request):
+    db, actor, _ = context(request)
+    return {"suppliers": await suppliers.list_suppliers(db, actor)}
+
+
+@router.get("/api/offices/{office_id}/payables")
+async def payables_view(request: Request, office_id: str):
+    db, actor, _ = context(request)
+    return await payables.get_payables(db, actor, office_id, request.query_params.get("month"))
+
+
+@router.post("/api/offices/{office_id}/payments", status_code=201)
+async def record_payment(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await payables.record_payment(db, actor, office_id, body, decode_receipt(body.get("receipt")), request.headers.get("idempotency-key"))
+
+
+@router.get("/api/payments/{payment_id}/receipt")
+async def payment_receipt(request: Request, payment_id: str):
+    db, actor, _ = context(request)
+    file = await payables.payment_file(db, actor, payment_id)
+    return Response(file["bytes"], media_type=file["contentType"], headers={"Content-Disposition": attachment_name(file["fileName"], "payment")})
+
+
+@router.post("/api/payments/{payment_id}/delete")
+async def delete_payment(request: Request, payment_id: str):
+    db, actor, _ = context(request)
+    return await payables.delete_payment(db, actor, payment_id)
 
 
 @router.post("/api/offices/{office_id}/receipt-readings", status_code=202)
