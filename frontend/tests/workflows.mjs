@@ -33,9 +33,16 @@ export async function extendedWorkflows({ page, browser, app }) {
   await office('Ahmedabad');
   await nav('Record');
   await nav('Product');
-  await page.locator('.record-form').getByLabel('Name', { exact: true }).fill('Browser oats');
-  await nav('Save');
-  await expect(page.locator('.record-form').getByLabel('Name', { exact: true })).toHaveValue('');
+  // The Product tab keeps the shared category list; products come from a bill.
+  assert.equal(await page.locator('.record-form').getByLabel('Name', { exact: true }).count(), 0);
+  await page.locator('.record-form').getByLabel('New category').fill('Browser grains');
+  await nav('Add');
+  await expect(page.locator('.category-list')).toContainText('Browser grains');
+  await nav('Purchase');
+  await page.locator('.purchase-line').first().getByRole('button', { name: 'New product', exact: true }).click();
+  await page.locator('.new-product').getByLabel('Product name', { exact: true }).fill('Browser oats');
+  await page.locator('.new-product').getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(page.locator('.new-product')).toHaveCount(0);
   await page.locator('.side').getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('Lookback months').fill('4');
   await page.getByLabel('Weekend weight').fill('0.3');

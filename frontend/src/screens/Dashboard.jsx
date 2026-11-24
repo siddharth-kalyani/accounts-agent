@@ -9,6 +9,7 @@ import { OfficeBar } from "../components/OfficeBar.jsx";
 import { OfficesPanel } from "../components/OfficesPanel.jsx";
 import { RecordPanel } from "../components/RecordPanel.jsx";
 import { ProductEditor } from "../components/ProductEditor.jsx";
+import { Payables } from "../components/Payables.jsx";
 import { Purchases } from "../components/Purchases.jsx";
 import { SettingsPanel } from "../components/SettingsPanel.jsx";
 import { TodayStock } from "../components/TodayStock.jsx";
@@ -33,21 +34,23 @@ import {
   IconStock,
   IconSun,
   IconSystem,
+  IconWallet,
 } from "../icons.jsx";
 
-const PANTRY_VIEWS = ["record", "stock", "purchases", "charts", "activity"];
+const PANTRY_VIEWS = ["record", "stock", "purchases", "payables", "charts", "activity"];
 const ADMIN_VIEWS = ["offices", "access", "settings"];
 const PANTRY_NAV = [
   ["record", "Record", IconRecord],
   ["stock", "Stock", IconStock],
   ["purchases", "Purchases", IconReceipt],
+  ["payables", "Payables", IconWallet],
   ["charts", "Charts", IconChart],
   ["activity", "Activity", IconActivity],
 ];
 // Activity filters, by the start of each logged action.
 const ACTIVITY_KINDS = [
   ["all", "All", () => true],
-  ["purchases", "Purchases", (action) => /^(purchase|receipt)\./.test(action)],
+  ["purchases", "Purchases", (action) => /^(purchase|receipt|payment|supplier)\./.test(action)],
   ["counts", "Counts", (action) => /^count\./.test(action)],
   ["products", "Products", (action) => /^product\./.test(action)],
   ["admin", "Admin", (action) => /^(office|grant|person|settings)\./.test(action)],
@@ -56,6 +59,7 @@ const UNDO_MS = 6000;
 const SIDEBAR_KEY = "aim-sidebar";
 
 function activityIcon(action) {
+  if (/^(payment|supplier)\./.test(action)) return <IconWallet size={18} />;
   if (/^(purchase|receipt)\./.test(action)) return <IconReceipt size={18} />;
   if (/^count\./.test(action)) return <IconCount size={18} />;
   if (/^product\./.test(action)) return <IconStock />;
@@ -81,6 +85,7 @@ const TITLES = {
   record: "Record",
   stock: "Stock",
   purchases: "Purchases",
+  payables: "Payables",
   charts: "Charts",
   activity: "Activity",
   offices: "Offices",
@@ -154,6 +159,8 @@ export function Dashboard({ theme, onSignOut }) {
   const [pantryFailed, setPantryFailed] = useState(false);
   const [activity, setActivity] = useState(null);
   const [stockQuery, setStockQuery] = useState("");
+  // Stock category filter: null shows every category, "" shows products with none.
+  const [stockCategory, setStockCategory] = useState(null);
   const [activityQuery, setActivityQuery] = useState("");
   const [health, setHealth] = useState(null);
   const [view, setView] = useState(() => (PANTRY_VIEWS.includes(starting.current.view) ? starting.current.view : "stock"));
@@ -181,6 +188,8 @@ export function Dashboard({ theme, onSignOut }) {
   const [recordKind, setRecordKind] = useState("receipt");
   // Today's stock dialog on Stock.
   const [counting, setCounting] = useState(false);
+  // What this office owes on credit today, shown on Stock.
+  const [creditDue, setCreditDue] = useState(null);
   const officeRequest = useRef(0);
   const purchaseRequest = useRef(null);
   // Removals waiting behind an Undo toast: id -> { commit, revert }.
@@ -407,13 +416,32 @@ export function Dashboard({ theme, onSignOut }) {
   }, [officeId]);
 
   useEffect(() => {
+    if (allOffices || !officeId || !pantry || pantry.officeId !== officeId || (view !== "stock" && view !== "charts")) return undefined;
+    let cancel = false;
+    api(`/api/offices/${officeId}/payables?month=${encodeURIComponent(month)}`)
+      .then((data) => {
+        if (!cancel) setCreditDue({ officeId, due: data.due, suppliers: data.suppliers.filter((row) => Number(row.due) > 0).length });
+      })
+      .catch(() => {
+        if (!cancel) setCreditDue(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [allOffices, officeId, pantry, view, month]);
+
+  useEffect(() => {
     const node = document.querySelector(".page");
     if (node) node.scrollTop = 0;
   }, [view, officeId]);
 
   const products = (pantry?.products || []).filter((product) => !product.deletedAt);
   const stockNeedle = stockQuery.trim().toLowerCase();
-  const stockList = products.filter((product) => !stockNeedle || product.name.toLowerCase().includes(stockNeedle) || statusLabel(stockState(product)).toLowerCase().includes(stockNeedle));
+  // Categories in use at this office, for the Stock filter. "" is no category.
+  const stockCategories = [...new Set(products.map((product) => product.category || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const categoryShown = stockCategory === null || stockCategories.includes(stockCategory) ? stockCategory : null;
+  const stockList = products.filter((product) => (categoryShown === null || (product.category || "") === categoryShown)
+    && (!stockNeedle || product.name.toLowerCase().includes(stockNeedle) || (product.category || "").toLowerCase().includes(stockNeedle) || statusLabel(stockState(product)).toLowerCase().includes(stockNeedle)));
   const officeList = (summary?.offices || []).filter((office) => !stockNeedle || office.name.toLowerCase().includes(stockNeedle));
   const activityNeedle = activityQuery.trim().toLowerCase();
   const activityFilter = (ACTIVITY_KINDS.find(([id]) => id === activityKind) || ACTIVITY_KINDS[0])[2];
@@ -493,39 +521,22 @@ export function Dashboard({ theme, onSignOut }) {
     setError("");
     try {
       let toast = "";
-      if (form.kind === "attach") {
-        await api(`/api/purchases/${form.purchaseId}/receipt`, { method: "PUT", body: { receipt } });
-        purchaseRequest.current = null;
-        toast = "Receipt attached.";
-      } else if (form.kind === "product") {
-        await api(`/api/offices/${officeId}/products`, { method: "POST", body: { name: form.name } });
-        toast = `Added ${form.name}.`;
-      } else if (form.kind === "purchase") {
-        const fingerprint = JSON.stringify({ officeId, form, receipt });
+      if (form.kind === "bill") {
+        const body = { ...form };
+        delete body.kind;
+        const fingerprint = JSON.stringify({ officeId, body, receipt });
         if (purchaseRequest.current?.fingerprint !== fingerprint) purchaseRequest.current = { fingerprint, key: crypto.randomUUID() };
-        const saved = await api(`/api/offices/${officeId}/purchases`, {
+        const saved = await api(`/api/offices/${officeId}/purchases/batch`, {
           method: "POST",
           headers: { "Idempotency-Key": purchaseRequest.current.key },
-          body: {
-            productId: form.productId,
-            date: form.date,
-            packs: Number(form.packs),
-            pricePerPack: form.price,
-            ...(form.onHand != null ? { onHand: form.onHand } : {}),
-            receipt,
-          },
+          body: { ...body, receipt },
         });
-        if (saved.receiptError) {
-          setError(saved.receiptError);
-          try {
-            await reloadScreen();
-          } catch {
-            setError((previous) => [previous, "Saved, but the screen could not refresh. Reload to see the updated pantry."].filter(Boolean).join(" "));
-          }
-          return { purchaseId: saved.purchaseId };
-        }
         purchaseRequest.current = null;
-        toast = form.onHand != null ? "Purchase and today's stock saved." : "Purchase saved.";
+        const count = saved.purchases.length;
+        const counted = body.lines.some((line) => line.onHand != null);
+        // The purchases are saved even when the receipt upload fails.
+        if (saved.receiptError) setError(`${saved.receiptError} Attach it from Purchases.`);
+        toast = `${count === 1 ? "Purchase" : `${count} purchases`}${counted ? " and today's stock" : ""} saved${saved.onCredit ? " on credit" : ""}.`;
       } else if (form.kind === "count") {
         await api(`/api/offices/${officeId}/counts`, {
           method: "PUT",
@@ -788,6 +799,14 @@ export function Dashboard({ theme, onSignOut }) {
                 <p className="eyebrow"><Star /> Spent in {monthName}</p>
                 <h1>{allOffices ? rupee(summary.spend) : rupee(pantry.spend)}</h1>
                 <p>{allOffices ? "All offices" : pantry.officeName}</p>
+                {!allOffices && (pantry.creditBought || pantry.creditPaid) ? (
+                  <p className="hero-explain">
+                    {[
+                      pantry.creditPaid ? `Includes ${rupee(pantry.creditPaid)} paid to suppliers` : "",
+                      pantry.creditBought ? `${rupee(pantry.creditBought)} bought on credit is not spent until paid` : "",
+                    ].filter(Boolean).join(". ")}.
+                  </p>
+                ) : null}
               </div>
               <div className="hero-forecast">
                 <p className="eyebrow">Next month</p>
@@ -802,7 +821,18 @@ export function Dashboard({ theme, onSignOut }) {
                 {allOffices ? (
                   <p>Due stays on each office.</p>
                 ) : (
-                  <p>{heroStatus(outOfStock, due)}</p>
+                  <>
+                    {creditDue?.officeId === officeId ? (
+                      <div className="hero-credit">
+                        <p className="eyebrow">Credit due</p>
+                        <p className="credit-figure">{rupee(creditDue.due)}</p>
+                        <button className="hero-link" type="button" onClick={() => openView("payables")}>
+                          {creditDue.suppliers ? `To clear with ${creditDue.suppliers} ${creditDue.suppliers === 1 ? "supplier" : "suppliers"}` : "Nothing to clear"}
+                        </button>
+                      </div>
+                    ) : null}
+                    <p>{heroStatus(outOfStock, due)}</p>
+                  </>
                 )}
               </div>
             </section>
@@ -855,6 +885,17 @@ export function Dashboard({ theme, onSignOut }) {
                   aria-label={allOffices ? "Search offices" : "Search products"}
                   onChange={(event) => setStockQuery(event.target.value)}
                 />
+                {!allOffices && stockCategories.some(Boolean) ? (
+                  <select
+                    className="category-filter"
+                    aria-label="Filter by category"
+                    value={categoryShown === null ? "\u0000all" : categoryShown}
+                    onChange={(event) => setStockCategory(event.target.value === "\u0000all" ? null : event.target.value)}
+                  >
+                    <option value={"\u0000all"}>All categories</option>
+                    {stockCategories.map((category) => <option key={category || "none"} value={category}>{category || "No category"}</option>)}
+                  </select>
+                ) : null}
                 <button
                   className="ghost"
                   type="button"
@@ -907,6 +948,7 @@ export function Dashboard({ theme, onSignOut }) {
                       <article className={`product${state === "out" ? " is-out" : ""}`} key={product.productId}>
                         <div className="product-name">
                           <h3>{product.name}</h3>
+                          {product.category ? <span className="category-tag">{product.category}</span> : null}
                         </div>
                         <p className="stat">
                           <small className="muted">On hand today</small>{state === "out" ? "None left" : packs(product.onHand)}
@@ -928,24 +970,25 @@ export function Dashboard({ theme, onSignOut }) {
                         <p className="stat">
                           <small className="muted">Spent in {monthName}</small>{rupee(product.spend)}
                           <small className="muted">{product.latestPricePerPack ? `Latest ${rupee(product.latestPricePerPack)}` : "No price this month"}</small>
+                          {product.creditSpend ? <small className="muted">{rupee(product.creditSpend)} on credit</small> : null}
                         </p>
                         <div className="product-end">
                           <span className={`pill ${state}`}>{statusLabel(state)}</span>
-                          {pantry.canWrite ? <ProductEditor product={product} onSaved={refresh} onToast={pushToast} /> : null}
+                          {pantry.canWrite ? <ProductEditor product={product} officeId={officeId} onSaved={refresh} onToast={pushToast} /> : null}
                         </div>
                         {/* While counts build up, Runs out already says how long; other messages explain a problem. */}
                         {product.message && !learning && Number(product.countedDays) >= FORECAST_COUNT_DAYS ? <p className="note">{product.message}</p> : null}
                       </article>
                     );
-                  }) : stockQuery.trim() ? (
+                  }) : stockQuery.trim() || categoryShown !== null ? (
                     <p className="note">No product matches that search.</p>
                   ) : (
                     <EmptyState
                       art="box"
                       title="No products on this pantry."
-                      actions={pantry.canWrite ? <button className="solid small" type="button" onClick={() => openRecord("product")}>Add a product</button> : null}
+                      actions={pantry.canWrite ? <button className="solid small" type="button" onClick={() => openRecord("purchase")}>Record a purchase</button> : null}
                     >
-                      Add what the office buys, such as coffee or milk, to start tracking it.
+                      Record a bill with what the office buys, such as coffee or milk, to start tracking it.
                     </EmptyState>
                   )}
                 </div>
@@ -975,6 +1018,29 @@ export function Dashboard({ theme, onSignOut }) {
           ) : (
             <section className="card">
               {officeFailed ? <LoadFailed text={`${officeName} could not be loaded.`} onRetry={retryOffice} /> : <Skeleton label="Loading purchases." rows={3} />}
+            </section>
+          )
+        ) : null}
+
+        {offices.length > 0 && view === "payables" ? (
+          allOffices ? (
+            <section className="card"><h2>Choose an office</h2><p className="lede">Payables are kept for one office. Pick it above your name.</p></section>
+          ) : pantry ? (
+            <Payables
+              key={`${officeId}-${month}`}
+              officeId={officeId}
+              officeName={pantry.officeName}
+              month={month}
+              monthName={monthName}
+              revision={pantry}
+              onChanged={refresh}
+              onToast={pushToast}
+              onUndoable={scheduleUndo}
+              onRecord={openRecord}
+            />
+          ) : (
+            <section className="card">
+              {officeFailed ? <LoadFailed text={`${officeName} could not be loaded.`} onRetry={retryOffice} /> : <Skeleton label="Loading payables." rows={3} />}
             </section>
           )
         ) : null}

@@ -25,6 +25,10 @@
   ],
   [
     "GET",
+    "/api/categories"
+  ],
+  [
+    "GET",
     "/api/chat/threads"
   ],
   [
@@ -61,6 +65,10 @@
   ],
   [
     "GET",
+    "/api/offices/{}/payables"
+  ],
+  [
+    "GET",
     "/api/offices/{}/purchases"
   ],
   [
@@ -77,11 +85,19 @@
   ],
   [
     "GET",
+    "/api/payments/{}/receipt"
+  ],
+  [
+    "GET",
     "/api/people"
   ],
   [
     "GET",
     "/api/purchases/{}/receipt"
+  ],
+  [
+    "GET",
+    "/api/suppliers"
   ],
   [
     "PATCH",
@@ -153,7 +169,15 @@
   ],
   [
     "POST",
+    "/api/offices/{}/categories"
+  ],
+  [
+    "POST",
     "/api/offices/{}/manager"
+  ],
+  [
+    "POST",
+    "/api/offices/{}/payments"
   ],
   [
     "POST",
@@ -162,6 +186,10 @@
   [
     "POST",
     "/api/offices/{}/purchases"
+  ],
+  [
+    "POST",
+    "/api/offices/{}/purchases/batch"
   ],
   [
     "POST",
@@ -178,6 +206,10 @@
   [
     "POST",
     "/api/offices/{}/settings-preview"
+  ],
+  [
+    "POST",
+    "/api/payments/{}/delete"
   ],
   [
     "POST",

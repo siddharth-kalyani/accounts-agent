@@ -542,6 +542,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .purchase-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .purchase-row > div { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
 .purchase-row p { margin: 4px 0; }
+.purchase-row > div > small { display: block; }
 
 .forms { display: grid; grid-template-columns: 160px 1fr; gap: 14px; }
 .form-nav { display: grid; align-content: start; gap: 6px; }
@@ -690,6 +691,58 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   padding: 12px;
 }
 .receipt-line.unmatched { border-left: 3px solid var(--accent); }
+.receipt-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Product picker with "+" on the Purchase tab, and the new-product box it opens. */
+.product-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.product-row select { flex: 1 1 auto; min-width: 0; }
+.product-row .add-product { width: 46px; height: auto; min-height: 46px; flex: none; }
+.product-row .add-product[aria-expanded="true"] { border-color: var(--ink); }
+.new-product {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--soft);
+  padding: 12px;
+}
+.new-product strong { font-weight: 500; color: var(--ink); }
+
+/* Category: inline "new category" box and the label shown beside a product. */
+.category-new { display: grid; gap: 6px; }
+.inline-input { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.inline-input input { flex: 1 1 auto; min-width: 0; }
+.inline-input .solid.small { min-height: 40px; }
+.category-tag {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.purchase-row .category-tag { margin-left: 8px; vertical-align: 2px; }
+.category-filter {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 32px 8px 12px;
+  color: var(--ink);
+  font: inherit;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.category-filter:hover { border-color: var(--muted); }
+.category-filter:focus { border-color: var(--ink); }
 .receipt-line-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .receipt-line-head strong { min-width: 0; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1076,7 +1129,9 @@ button.office-card:hover { background: var(--soft); }
 .access-form input,
 .access-form select,
 .access-search input,
-.search-field input {
+.search-field input,
+.product-row select,
+.inline-input input {
   width: 100%;
   min-height: 46px;
   background: var(--paper);
@@ -1095,6 +1150,8 @@ button.office-card:hover { background: var(--soft); }
 .access-form select:hover,
 .access-search input:hover,
 .search-field input:hover,
+.product-row select:hover,
+.inline-input input:hover,
 .sign-form input:hover:not([readonly]),
 .product-button:hover:not(:disabled) { border-color: var(--muted); }
 .field > input:focus,
@@ -1104,9 +1161,12 @@ button.office-card:hover { background: var(--soft); }
 .access-form select:focus,
 .access-search input:focus,
 .search-field input:focus,
+.product-row select:focus,
+.inline-input input:focus,
 .sign-form input:focus { border-color: var(--ink); }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 .field > select,
+.product-row select,
 .access-form select {
   appearance: none;
   padding-right: 42px;
@@ -1659,3 +1719,135 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
   .count-list li { grid-template-columns: minmax(0, 1fr) 96px; }
   .on-hand-hint { padding-bottom: 0; }
 }
+
+/* Dropdown options with an icon, such as New product. The chevron turns; these do not. */
+.pick-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.product-button .pick-label svg, .product-menu .pick-label svg { transform: none; color: var(--muted); flex: none; }
+
+/* Price per pack, number of packs and the total; pack size and its unit. */
+.pack-price { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pack-size { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.field > input:disabled { background: var(--soft); color: var(--muted); }
+.purchase-line .receipt-line-head strong { font-weight: 700; }
+.add-line { justify-self: start; }
+.bill-total { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bill-total strong { font-size: 18px; margin-left: 6px; }
+.receipt-sum { display: grid; gap: 4px; }
+
+/* Bought on credit: a switch, ink when on. */
+.credit-toggle { display: grid; gap: 4px; }
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; color: var(--ink); font-weight: 500; font-size: 15px; justify-self: start; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: none;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.switch input:checked + .switch-track { background: var(--ink); border-color: var(--ink); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); background: var(--paper); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.credit-tag { color: var(--ink); border-color: var(--ink); }
+.purchase-row > .row-actions { flex: 0 0 auto; align-items: center; gap: 6px; }
+.payment-actions { justify-content: flex-start; }
+
+/* Payables. */
+.payables-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0 4px; }
+.payables-totals .stat { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); font-size: 18px; font-weight: 500; }
+.payables-totals .stat small { font-size: 13px; font-weight: 400; margin-bottom: 4px; }
+.due-figure { color: var(--accent); }
+.payables-list { display: grid; gap: 12px; margin-top: 12px; }
+.payable-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.payable-name { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.payable-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; font-variant-numeric: tabular-nums; }
+.payable-figures div { min-width: 0; }
+.payable-figures dt { color: var(--muted); font-size: 12px; }
+.payable-figures dd { margin: 2px 0 0; color: var(--ink); overflow-wrap: anywhere; }
+.payment-form { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); padding: 12px; }
+.payables-heading { margin: 22px 0 0; font-size: 15px; font-weight: 500; }
+
+/* Credit due on the Stock summary. */
+.hero-credit { margin-bottom: 12px; }
+.credit-figure { margin: 0; font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -0.03em; color: #fff; font-variant-numeric: tabular-nums; }
+.hero-link { background: transparent; border: 0; padding: 0; color: #cfcfcf; font: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.hero-link:hover { color: #fff; }
+
+@media (max-width: 980px) {
+  .payable-row { grid-template-columns: minmax(0, 1fr); }
+  .payable-row > .row-actions { justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+  .pack-price { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pack-price > .field:last-child { grid-column: 1 / -1; }
+  .payables-totals { grid-template-columns: minmax(0, 1fr); }
+  .payable-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-credit { margin-bottom: 6px; }
+  .credit-figure { font-size: 22px; }
+}
+
+/* Receipt review: one compact row of figures per line. */
+.line-figures { grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)); }
+.pack-inline { display: flex; min-width: 0; }
+.pack-inline input,
+.pack-inline select {
+  min-width: 0;
+  min-height: 46px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 16px;
+  transition: border-color 0.15s ease;
+}
+.pack-inline input { flex: 1 1 auto; width: 100%; padding: 12px 10px 12px 14px; border-radius: 4px 0 0 4px; }
+.pack-inline select {
+  flex: none;
+  width: 76px;
+  margin-left: -1px;
+  padding: 12px 26px 12px 10px;
+  border-radius: 0 4px 4px 0;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.pack-inline input:disabled { background: var(--soft); color: var(--muted); }
+.pack-inline input:hover:not(:disabled), .pack-inline select:hover { border-color: var(--muted); }
+.pack-inline input:focus, .pack-inline select:focus { border-color: var(--ink); position: relative; z-index: 1; }
+.line-head-end { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+.line-head-end small { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receipt-file { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .line-figures { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.line-extras { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 760px) {
+  .pack-inline input { padding: 12px 6px 12px 10px; }
+  .pack-inline select { width: 62px; padding-right: 22px; background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%; }
+}
+.category-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.category-list .category-tag { margin-top: 0; font-size: 14px; line-height: 22px; color: var(--ink); }

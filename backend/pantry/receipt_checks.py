@@ -55,6 +55,36 @@ def pack_count(value):
     return amount(match.group(1)) if match else None
 
 
+_CHARGE = re.compile(
+    r"\b(?:delivery|shipping|freight|courier|handling|convenience|platform|packing|packaging|service|small\s*cart|surge|other)"
+    r"(?:\s+(?:and|&)\s+other)?\s+(?:charges?|fees?)\b",
+    re.I,
+)
+
+
+def move_charge_lines(payload):
+    """Delivery, handling and similar fees are bill charges, not products.
+
+    A row the model listed as an item but printed as a charge or fee moves to
+    adjustments with its printed amount, so it is counted in the total check
+    and never proposed as a pack purchase. A row matched to an office product
+    stays a line.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("lines"), list):
+        return payload
+    lines, moved = [], []
+    for line in payload["lines"]:
+        if isinstance(line, dict) and not line.get("productName") and _CHARGE.search(str(line.get("printed") or "")):
+            # An unreadable charge amount stays unreadable: the total is then left unchecked.
+            moved.append({"label": str(line.get("printed"))[:120], "amount": line.get("lineTotal")})
+        else:
+            lines.append(line)
+    if not moved:
+        return payload
+    adjustments = payload.get("adjustments") if isinstance(payload.get("adjustments"), list) else []
+    return {**payload, "lines": lines, "adjustments": [*adjustments, *moved]}
+
+
 def inspect_receipt(payload):
     """Return a copy with safe proposals, review notes and bounded retry reasons.
 

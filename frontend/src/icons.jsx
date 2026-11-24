@@ -278,3 +278,43 @@ export function IconMicrosoft() {
     </svg>
   );
 }
+
+export function IconTrash({ size = 18 }) {
+  return (
+    <Svg size={size}>
+      <path d="M4 7h16" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+      <path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" />
+    </Svg>
+  );
+}
+
+export function IconDownload({ size = 18 }) {
+  return (
+    <Svg size={size}>
+      <path d="M12 4v11" />
+      <path d="m7 10.5 5 5 5-5" />
+      <path d="M5 20h14" />
+    </Svg>
+  );
+}
+
+export function IconWallet({ size = 20 }) {
+  return (
+    <Svg size={size}>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3" />
+      <path d="M4 7.5v10A2.5 2.5 0 0 0 6.5 20H20V8H6.5A2.5 2.5 0 0 1 4 7.5Z" />
+      <path d="M16 14h.01" />
+    </Svg>
+  );
+}
+
+export function IconNew({ size = 16 }) {
+  return (
+    <Svg size={size}>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M12 8.5v7M8.5 12h7" />
+    </Svg>
+  );
+}

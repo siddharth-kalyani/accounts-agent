@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconChevron } from "../icons.jsx";
 
-// One searchable dropdown for the app. `options` are { value, label, detail? }.
+// One searchable dropdown for the app. `options` are { value, label, detail?, icon? }.
 export function PickMenu({
   options,
   value,
@@ -47,7 +47,7 @@ export function PickMenu({
           setOpen((current) => !current);
         }}
       >
-        <span className={selected ? "" : "pick-placeholder"}>{selected?.label || placeholder}</span>
+        <span className={selected ? "pick-label" : "pick-placeholder"}>{selected?.icon || null}{selected?.label || placeholder}</span>
         <IconChevron />
       </button>
       {open ? (
@@ -72,7 +72,7 @@ export function PickMenu({
                 setOpen(false);
               }}
             >
-              {option.label}
+              <span className="pick-label">{option.icon || null}{option.label}</span>
               {option.detail ? <small>{option.detail}</small> : null}
             </button>
           ))}

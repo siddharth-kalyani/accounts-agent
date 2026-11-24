@@ -85,33 +85,73 @@ try {
   // Settings lives only under Super Admin, not as a Record tab.
   assert.equal(await page.locator(".record-card").getByRole("button", { name: "Settings", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Purchase", exact: true }).click();
-  await page.locator(".record-form select").selectOption({ label: "Coffee beans" });
-  await page.getByLabel("Packs", { exact: true }).fill("3");
+  await page.locator(".record-form .product-row select").first().selectOption({ label: "Coffee beans" });
+  const firstCard = page.locator(".purchase-line").first();
+  await firstCard.getByLabel("Number of packs for Coffee beans").fill("3");
   // Counted today already holds a purchase dated today, so the box stays at today's count.
-  await expect(page.getByLabel("On hand now (packs)")).toHaveValue("6");
-  await page.getByLabel("Price per pack (INR)").fill("25.50");
+  await expect(firstCard.getByLabel("On hand now (packs)")).toHaveValue("6");
+  await firstCard.getByLabel("Price per pack (INR) for Coffee beans").fill("25.50");
+  // Packs times price fills the total; a typed total sets the price per pack.
+  await expect(firstCard.getByLabel("Total price (INR) for Coffee beans")).toHaveValue("76.50");
+  await firstCard.getByLabel("Total price (INR) for Coffee beans").fill("90");
+  await expect(firstCard.getByLabel("Price per pack (INR) for Coffee beans")).toHaveValue("30");
+  await expect(firstCard.getByLabel("Number of packs for Coffee beans")).toHaveValue("3");
+  await firstCard.getByLabel("Unit for Coffee beans").selectOption("g");
+  await firstCard.getByLabel("Qty per pack for Coffee beans").fill("200");
+  // A second product on the same bill gets its own card.
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  const secondCard = page.locator(".purchase-line").nth(1);
+  await secondCard.locator(".product-row select").selectOption({ label: "Milk" });
+  await secondCard.getByLabel("Unit for Milk").selectOption("ml");
+  await secondCard.getByLabel("Qty per pack for Milk").fill("500");
+  await secondCard.getByLabel("Price per pack (INR) for Milk").fill("27");
+  await secondCard.getByLabel("Number of packs for Milk").fill("4");
+  await expect(page.locator(".bill-total")).toContainText("₹198.00");
+  assert.equal(await page.getByLabel(/GST|Discount/).count(), 0);
   // The Purchase tab needs a receipt; nothing is sent without one.
   let purchasePosts = 0;
-  const countPurchase = (request) => { if (request.method() === "POST" && /\/api\/offices\/[^/]+\/purchases$/.test(request.url())) purchasePosts++; };
+  const countPurchase = (request) => { if (request.method() === "POST" && /\/api\/offices\/[^/]+\/purchases(\/batch)?$/.test(request.url())) purchasePosts++; };
   page.on("request", countPurchase);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Attach the receipt for this purchase.", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Packs", { exact: true })).toHaveValue("3");
-  assert.equal(purchasePosts, 0);
-  page.off("request", countPurchase);
+  await page.getByRole("button", { name: "Save 2 purchases", exact: true }).click();
+  await expect(page.getByText("Attach the receipt for this bill.", { exact: true })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles({ name: "browser-receipt.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nBrowser test receipt\n%%EOF") });
   await expect(page.getByText("browser-receipt.pdf", { exact: true })).toBeVisible();
+  // Credit is on by default and needs a supplier.
+  await page.getByRole("button", { name: "Save 2 purchases", exact: true }).click();
+  await expect(page.getByText("Choose the supplier for a credit purchase.", { exact: true })).toBeVisible();
+  assert.equal(purchasePosts, 0);
+  page.off("request", countPurchase);
+  await page.locator(".record-form .product-pick > button").first().click();
+  await page.getByRole("option", { name: /Other supplier/ }).click();
+  await page.getByLabel("Supplier name", { exact: true }).fill("Browser Wholesale Pvt Ltd");
+  await page.getByRole("button", { name: "Use", exact: true }).click();
   // A failed read after an acknowledged save must not look like a failed
   // purchase and leave the same form ready to be submitted again.
   await page.route("**/api/offices", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary test outage." }) }));
   const purchaseDate = await page.locator(".record-form input[type=date]").inputValue();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByLabel("Packs", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Save 2 purchases", exact: true }).click();
+  await expect(page.locator(".purchase-line")).toHaveCount(1);
+  await expect(page.locator(".purchase-line").first().getByLabel(/^Number of packs/)).toHaveValue("");
   await expect(page.getByText("Saved, but the screen could not refresh. Reload to see the updated pantry.", { exact: true })).toBeVisible();
-  // A run of purchases keeps the date and says what was just saved.
-  await expect(page.locator(".saved-summary")).toContainText("3 packs of Coffee beans");
+  // The next bill keeps the date and supplier and says what was just saved.
+  await expect(page.locator(".saved-summary")).toContainText("2 products from Browser Wholesale Pvt Ltd");
+  await expect(page.locator(".saved-summary")).toContainText("on credit");
   await expect(page.locator(".record-form input[type=date]")).toHaveValue(purchaseDate);
   await page.unroute("**/api/offices");
+  // What was bought on credit is due on Payables until it is paid.
+  await page.locator(".side").getByRole("button", { name: "Payables", exact: true }).click();
+  const owed = page.locator(".payable-row", { hasText: "Browser Wholesale Pvt Ltd" });
+  await expect(owed).toContainText("₹198.00");
+  await owed.getByRole("button", { name: "Record payment", exact: true }).click();
+  await owed.getByLabel("Amount paid (INR)").fill("100");
+  await owed.getByRole("button", { name: "Save payment", exact: true }).click();
+  await expect(owed.getByText("Attach the payment receipt.", { exact: true })).toBeVisible();
+  await owed.locator('input[type="file"]').setInputFiles({ name: "upi-proof.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") });
+  await owed.getByRole("button", { name: "Save payment", exact: true }).click();
+  await expect(owed.locator(".payable-name")).toContainText("Due now ₹98.00");
+  await expect(page.locator(".purchase-row", { hasText: "upi-proof.png" }).getByRole("button", { name: "Preview receipt" })).toBeVisible();
+  await page.locator(".side").getByRole("button", { name: "Stock", exact: true }).click();
+  await expect(page.locator(".hero-credit")).toContainText("₹98.00");
   await page.getByRole("button", { name: "Purchases", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Purchases and receipts" })).toBeVisible();
   const row = page.locator(".purchase-row").filter({ has: page.getByRole("button", { name: "Download receipt" }) }).first();
@@ -203,28 +243,31 @@ try {
   });
   await page.getByRole("button", { name: "Read receipt", exact: true }).click();
   const amul = page.locator(".receipt-line", { hasText: "Amul Taaza" });
-  await expect(amul.getByText("Not one of this office's products.")).toBeVisible({ timeout: 10000 });
-  await expect(amul.getByText("Printed line amount: ₹60.00", { exact: true })).toBeVisible();
+  // A line that fits no office product goes under Other.
+  await expect(amul.getByRole("button", { name: "Other", exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(amul.getByText("Printed ₹60.00", { exact: true })).toBeVisible();
   await expect(amul.getByRole("status")).toContainText("Check the quantity");
   await page.screenshot({ path: path.join(os.tmpdir(), "pantry-receipt-desktop-review.png") });
-  assert.equal(await page.locator(".receipt-review select").count(), 0);
-  await amul.getByRole("button", { name: "Choose a product" }).click();
+  // Products are chosen from the searchable menu; the only native select is the pack unit.
+  assert.equal(await amul.locator("select").count(), 1);
+  assert.equal(await page.getByLabel(/New product name|Category|GST|Discount/).count(), 0);
+  await amul.getByRole("button", { name: "Other", exact: true }).click();
   await expect(amul.getByLabel("Search products")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(amul.getByLabel("Search products")).toHaveCount(0);
-  await amul.getByRole("button", { name: "Choose a product" }).click();
+  await amul.getByRole("button", { name: "Other", exact: true }).click();
   await amul.getByLabel("Search products").fill("zzz");
   await expect(amul.getByText("No product matches that search.")).toBeVisible();
   await amul.getByLabel("Search products").fill("mil");
   await amul.getByRole("option", { name: "Milk", exact: true }).click();
   await expect(amul.getByRole("button", { name: "Milk", exact: true })).toBeVisible();
-  await expect(amul.getByText("Not one of this office's products.")).toHaveCount(0);
+  await expect(amul.getByRole("button", { name: "Other", exact: true })).toHaveCount(0);
   const mystery = page.locator(".receipt-line", { hasText: "Mystery item" });
   await mystery.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(mystery).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  await expect(amul.getByText("Printed line amount: ₹60.00", { exact: true })).toBeVisible();
+  await expect(amul.getByText("Printed ₹60.00", { exact: true })).toBeVisible();
   const receiptOverflow = await page.locator(".record-card").evaluate((card) => [...card.querySelectorAll("input, button, .note, .card-head > div, .choices")]
     .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
     .map((element) => ({ tag: element.tagName, className: element.className, right: element.getBoundingClientRect().right })));
@@ -235,8 +278,8 @@ try {
   await expect(page.getByText("Drop a PDF, JPEG, or PNG, or browse")).toBeVisible();
   await page.unroute("**/api/offices/*/receipt-readings**");
   await page.getByRole("button", { name: "Purchase", exact: true }).click();
-  await expect(page.locator(".record-form select")).toBeVisible();
-  for (const label of ["Charts", "Activity", "Access", "Stock"]) {
+  await expect(page.locator(".record-form select").first()).toBeVisible();
+  for (const label of ["Payables", "Charts", "Activity", "Access", "Stock"]) {
     await page.getByRole("button", { name: label, exact: true }).click();
     await expect(page.locator("main.page")).toBeVisible();
   }

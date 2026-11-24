@@ -352,6 +352,10 @@ async def read_model_stream(upstream, on_delta):
             for key in ("id", "type"):
                 if call.get(key):
                     target[key] = call[key]
+            # Gemini 3 sends a thought_signature that must be returned with the
+            # call on the next turn, or that request fails with 400.
+            if isinstance(call.get("extra_content"), dict):
+                target["extra_content"] = call["extra_content"]
             for key in ("name", "arguments"):
                 target["function"][key] += (call.get("function") or {}).get(key) or ""
         next_text = stream_visible(message["content"])
