@@ -58,7 +58,9 @@ try {
   const editor = page.getByRole("dialog", { name: "Edit Coffee" });
   await expect(editor.getByLabel("On hand today (packs)")).toBeFocused();
   assert.equal(await editor.getByLabel(/reorder/i).count(), 0);
-  await editor.getByLabel("On hand today (packs)").fill("6");
+  // The sample data last counted 6 packs on a fixed date; a different figure
+  // saves a count today on any calendar day.
+  await editor.getByLabel("On hand today (packs)").fill("8");
   await editor.getByLabel("Product name", { exact: true }).fill("Coffee beans");
   await editor.getByLabel("Warn this many working days before it runs out").fill("7");
   await editor.getByRole("button", { name: "Save", exact: true }).click();
@@ -89,7 +91,7 @@ try {
   const firstCard = page.locator(".purchase-line").first();
   await firstCard.getByLabel("Number of packs for Coffee beans").fill("3");
   // Counted today already holds a purchase dated today, so the box stays at today's count.
-  await expect(firstCard.getByLabel("On hand now (packs)")).toHaveValue("6");
+  await expect(firstCard.getByLabel("On hand now (packs)")).toHaveValue("8");
   await firstCard.getByLabel("Price per pack (INR) for Coffee beans").fill("25.50");
   // Packs times price fills the total; a typed total sets the price per pack.
   await expect(firstCard.getByLabel("Total price (INR) for Coffee beans")).toHaveValue("76.50");
