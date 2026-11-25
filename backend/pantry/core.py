@@ -14,8 +14,6 @@ from .identity import intuitive_sign_in_name
 from .passwords import hash_password, verify_password
 
 STARTERS = ["Coffee", "Milk", "Sugar", "Tea", "Sticks"]
-# The first product categories. People who can record purchases add more.
-DEFAULT_CATEGORIES = ["Beverages", "Dairy", "Groceries", "Snacks", "Cleaning & Hygiene", "Disposables", "Household", "Other"]
 ROLE_LABEL = {"super_admin": "Super Admin", "office_manager": "Office Manager", "admin": "Admin", "accounts": "Accounts"}
 ROLES = set(ROLE_LABEL)
 _clock = ContextVar("pantry_clock", default=None)
@@ -95,14 +93,12 @@ async def migrate(db):
     for name, ddl in (("mrp", "TEXT"), ("tax_percent", "TEXT"), ("discount", "TEXT"), ("pack_size", "TEXT"), ("pack_unit", "TEXT"), ("supplier", "TEXT"), ("on_credit", "INTEGER")):
         if name not in columns:
             await db.exec(f"ALTER TABLE pantry_purchase ADD COLUMN {name} {ddl}")
-    # A product's category is stored by name, so copies and migrations of
-    # products never point at a missing category row.
-    if "category" not in {r["name"] for r in await db.all("PRAGMA table_info(pantry_product)")}:
-        await db.exec("ALTER TABLE pantry_product ADD COLUMN category TEXT")
-    if not await db.get("SELECT id FROM product_category LIMIT 1"):
-        at = stamp()
-        for name in DEFAULT_CATEGORIES:
-            await db.run("INSERT INTO product_category (id, name, created_by, created_at) VALUES (?, ?, 'system', ?)", new_id(), name, at)
+    # Product categories were removed in November 2026: a product's name is its
+    # category. The owner chose to drop what was stored for them, so a database
+    # that had them loses the column and the list on its next start.
+    if "category" in {r["name"] for r in await db.all("PRAGMA table_info(pantry_product)")}:
+        await db.exec("ALTER TABLE pantry_product DROP COLUMN category")
+    await db.exec("DROP TABLE IF EXISTS product_category")
     if not await db.get("SELECT id FROM company_setting WHERE id = 1"):
         await db.run("INSERT INTO company_setting (id, weekend_weight, lookback_months) VALUES (1, 0.2, 3)")
     await repair_opening_counts(db)

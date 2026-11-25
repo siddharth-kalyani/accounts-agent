@@ -7,7 +7,7 @@ supplier instead of adding a second one.
 """
 import re
 from .compat import text
-from .core import HttpError, live_person, log, new_id, scoped, stamp
+from .core import HttpError, live_person, log, new_id, office_by_id, require_write, scoped, stamp, transactional
 
 _SUFFIXES = ((r"\bpvt\b", "private"), (r"\bltd\b", "limited"), (r"\bco\b", "company"), (r"\binc\b", "incorporated"), (r"\bcorp\b", "corporation"))
 
@@ -59,6 +59,27 @@ async def ensure_supplier(db, person, office_id, name):
     await db.run("INSERT INTO supplier (id, name, created_by, created_at) VALUES (?, ?, ?, ?)", supplier_id, clean, person["id"], stamp())
     await log(db, person["id"], "supplier.create", "supplier", supplier_id, office_id, f"Added the supplier {clean}.")
     return clean
+
+
+@transactional
+async def create_supplier(db, person, office_id, name):
+    """Add a supplier from the picker on a bill, before the bill is saved.
+
+    Anyone who can record purchases at the office can add one. A name that is
+    already listed under another spelling returns the listed name instead of
+    adding a second supplier.
+    """
+    person = await live_person(db, person)
+    require_write(person, office_id)
+    if not await office_by_id(db, office_id):
+        raise HttpError(404, "Office not found.")
+    clean = clean_supplier(name)
+    if not clean:
+        raise HttpError(422, "Enter a supplier name with a letter or digit.")
+    existing = await find_supplier(db, clean)
+    if existing:
+        return {"name": existing, "created": False}
+    return {"name": await ensure_supplier(db, person, office_id, clean), "created": True}
 
 
 @scoped

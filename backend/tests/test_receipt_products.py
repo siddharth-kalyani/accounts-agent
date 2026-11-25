@@ -377,3 +377,55 @@ async def test_discarded_lines_that_were_never_on_the_bill_take_no_share(api, db
     assert saved.status_code == 200, saved.json()
     # The whole ₹50 goes on the kept line.
     assert await saved_milk_price(db, office) == "150.00"
+
+
+def keys(line):
+    return {k: line[k] for k in KEYS}
+
+
+ONE_LINE = {**DELIVERED, "lines": DELIVERED["lines"][:1], "receiptTotal": "150"}
+
+
+async def test_a_line_the_reading_missed_can_be_added_on_review(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, ONE_LINE)
+    milk = result["lines"][0]
+    rice = (await api(f"/api/offices/{office}/products", actor="manager", method="POST", body={"name": "Missed rice"})).json()["productId"]
+    added = {"id": "added-k3x9q2m7", "added": True, "productId": "", "newName": "", "packs": "", "pricePerPack": "", "packSize": "", "packUnit": "N.A"}
+    draft = (await api(path, actor="manager", method="PATCH", body={"lines": [milk, added]})).json()["result"]
+    assert "added" not in draft["lines"][0]
+    new = draft["lines"][1]
+    # It starts with no product, not under Other, and nothing printed.
+    assert (new["id"], new["added"], new["printed"], new["productId"], new["newName"]) == ("added-k3x9q2m7", True, "", "", "")
+    refused = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [keys(milk), {**keys(new), "packs": 2, "pricePerPack": "50"}]})
+    assert refused.status_code == 422 and refused.json()["error"] == receipt_read.NEED_PRODUCT
+    # An id the screen did not make, or a line not marked as added, is not added.
+    ignored = (await api(path, actor="manager", method="PATCH", body={"lines": [milk, added, {**added, "id": "99"}, {**added, "id": "added-plain1", "added": False}]})).json()["result"]
+    assert [line["id"] for line in ignored["lines"]] == [milk["id"], "added-k3x9q2m7"]
+    draft = (await api(path, actor="manager", method="PATCH", body={"lines": [milk, {**added, "productId": rice, "packs": 2, "pricePerPack": "50"}]})).json()["result"]
+    assert draft["lines"][1]["productName"] == "Missed rice"
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [keys(line) for line in draft["lines"]]})
+    assert saved.status_code == 200, saved.json()
+    assert [p["product"] for p in saved.json()["purchases"]] == ["Milk", "Missed rice"] and saved.json()["productsAdded"] == []
+    # ₹100 of milk and ₹100 of rice share the ₹50 delivery.
+    assert await saved_milk_price(db, office) == "125.00"
+    assert (await db.get("SELECT price_per_pack FROM pantry_purchase WHERE product_id = ?", rice))["price_per_pack"] == "62.50"
+
+
+async def test_an_added_line_that_is_removed_is_dropped_and_takes_no_share(api, db, offices, monkeypatch):
+    office = offices["Ahmedabad"]
+    path, result = await read_bill(api, office, monkeypatch, ONE_LINE)
+    milk = result["lines"][0]
+    added = {"id": "added-r3m0v3d1", "added": True, "productId": "", "newName": "", "packs": 3, "pricePerPack": "100", "packUnit": "N.A"}
+    assert len((await api(path, actor="manager", method="PATCH", body={"lines": [milk, added]})).json()["result"]["lines"]) == 2
+    draft = (await api(path, actor="manager", method="PATCH", body={"lines": [milk, {**added, "discarded": True}]})).json()["result"]
+    assert [line["id"] for line in draft["lines"]] == [milk["id"]]
+    # A receipt holds at most 40 lines to add, counting the ones added on review.
+    many = [{**added, "id": f"added-many{n:04d}"} for n in range(40)]
+    capped = await api(path, actor="manager", method="PATCH", body={"lines": [milk, *many]})
+    assert capped.status_code == 422 and capped.json()["error"] == receipt_read.LINE_CAP
+    assert len((await api(path, actor="manager")).json()["result"]["lines"]) == 1
+    saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "lines": [keys(milk)]})
+    assert saved.status_code == 200, saved.json()
+    # The removed line was never on the bill, so the kept line takes the whole ₹50.
+    assert await saved_milk_price(db, office) == "150.00"

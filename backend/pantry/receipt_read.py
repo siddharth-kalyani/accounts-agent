@@ -30,6 +30,8 @@ SEARCH_MISS = "Search is unavailable. Leave this item unmatched."
 # Receipt lines that fit no office product are recorded under this product.
 OTHER = "Other"
 MAX_LINES = 40
+# A line the reviewer adds for an item the reading missed carries an id the screen made.
+ADDED_ID = re.compile(r"added-[A-Za-z0-9]{6,32}")
 MAX_LOOKUPS = 4
 MAX_EDGE = 2400
 MAX_JPEG = 2 * 1024 * 1024
@@ -501,7 +503,6 @@ def normalize(payload, products, *, checked=False, suppliers=None):
             "productId": product["id"] if product else "",
             "productName": product["name"] if product else "",
             "newName": "" if product else OTHER,
-            "newCategory": "",
             "packSize": pack_size,
             "packUnit": pack_unit,
             "packs": soft_packs(raw.get("packs")),
@@ -875,6 +876,19 @@ async def process(db, reading_id):
         await _fail(db, reading_id, MODEL_FAILED)
 
 
+def added_line(item, lines):
+    """A new draft line for an item the reading missed, or None when `item` is not one.
+
+    It starts with no product: the reviewer picks one, and approval refuses it until
+    they do. It never names a product as printed, because nothing was printed.
+    """
+    if item.get("added") is not True or item.get("discarded") or not ADDED_ID.fullmatch(str(item.get("id") or "")):
+        return None
+    if sum(1 for line in lines if not line.get("discarded")) >= MAX_LINES:
+        raise HttpError(422, LINE_CAP)
+    return {"id": str(item["id"]), "printed": "", "added": True, "productId": "", "productName": "", "newName": "", "matched": False, "packUnit": "N.A", "packSize": ""}
+
+
 def public_line(line):
     packs = line.get("packs")
     return {
@@ -884,7 +898,6 @@ def public_line(line):
         "productName": line.get("productName") or "",
         # Drafts saved before new products existed default to the printed name.
         "newName": line.get("newName") if isinstance(line.get("newName"), str) else ("" if line.get("productId") else OTHER),
-        "newCategory": line.get("newCategory") if isinstance(line.get("newCategory"), str) else "",
         # Drafts saved before pack sizes existed read as N.A until someone sets one.
         "packSize": line.get("packSize") or "",
         "packUnit": line.get("packUnit") or "N.A",
@@ -897,6 +910,8 @@ def public_line(line):
         "discarded": bool(line.get("discarded")),
         "note": line.get("note") or None,
         "lineTotal": line.get("lineTotal") or "",
+        # Only lines the reviewer added say so, so older drafts read as before.
+        **({"added": True} if line.get("added") else {}),
     }
 
 
@@ -1010,7 +1025,11 @@ async def patch_reading(db, person, office_id, reading_id, body):
                 continue
             line = by_id.get(str(item.get("id")))
             if not line:
-                continue
+                line = added_line(item, lines)
+                if not line:
+                    continue
+                lines.append(line)
+                by_id[line["id"]] = line
             product_id = str(item.get("productId") or "").strip()
             if product_id:
                 product = await inventory.active_product(db, office_id, product_id)
@@ -1023,8 +1042,6 @@ async def patch_reading(db, person, office_id, reading_id, body):
                 line["matched"] = False
             if "newName" in item:
                 line["newName"] = new_name(item.get("newName"))
-            if "newCategory" in item:
-                line["newCategory"] = clean_printed(item.get("newCategory"))[:60]
             packs, price = soft_packs(item.get("packs")), soft_price(item.get("pricePerPack"))
             if packs != line.get("packs") or price != line.get("pricePerPack"):
                 line["note"] = None
@@ -1064,7 +1081,9 @@ async def patch_reading(db, person, office_id, reading_id, body):
                 parsed["discardedShare"] = False
             else:
                 parsed.pop("discardedShare", None)
-        parsed["lines"] = lines
+        # A line the reviewer added and then removed was never on the bill: drop it,
+        # so it takes no share of the bill charges.
+        parsed["lines"] = [line for line in lines if not (line.get("added") and line.get("discarded"))]
         parsed.pop("purchases", None)
         await db.run(
             "UPDATE receipt_reading SET result_json = ?, updated_at = ? WHERE id = ? AND status = 'ready'",
@@ -1134,7 +1153,7 @@ async def _approve(db, person, office_id, reading_id, body):
                 elif not await db.get("SELECT id FROM pantry_product WHERE office_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL", office_id, name):
                     raise HttpError(422, NEED_KNOWN_PRODUCT)
                 inventory.validate_product_name(name)
-                product = {"newName": name, "category": await inventory.resolve_category(db, item.get("newCategory", line.get("newCategory")))}
+                product = {"newName": name}
             packs = inventory.parse_packs(item.get("packs"))
             price = inventory.parse_price(item.get("pricePerPack"))
             details = (
@@ -1154,7 +1173,7 @@ async def _approve(db, person, office_id, reading_id, body):
         kept = sum(packs * js_round(float(price) * 100) for _, _, packs, price, _ in prepared)
         shared = (body.get("discardedShare") if "discardedShare" in body else parsed.get("discardedShare")) is not False
         if shared:
-            charges = kept_share(charges, kept, sum(line_paise(line) for line in stored if line.get("discarded")))
+            charges = kept_share(charges, kept, sum(line_paise(line) for line in stored if line.get("discarded") and not line.get("added")))
         if charges and kept <= 0:
             raise HttpError(422, "The products being added have no price to spread the bill charges over. Check the prices or clear the charges.")
         if charges and kept + charges <= 0:
@@ -1187,7 +1206,7 @@ async def _approve(db, person, office_id, reading_id, body):
                     if existing:
                         created[key] = existing
                     else:
-                        made = await inventory.insert_product(db, person, office_id, name, at, starts_on=purchased_on, category=product["category"])
+                        made = await inventory.insert_product(db, person, office_id, name, at, starts_on=purchased_on)
                         await log(db, person["id"], "product.create", "product", made, office_id, f"Added {name} from a receipt.")
                         products_added.append(name)
                         created[key] = await db.get("SELECT * FROM pantry_product WHERE id = ?", made)

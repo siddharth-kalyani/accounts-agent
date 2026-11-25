@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, indiaDate, onHandAfter, packs, rupee, wholePacks } from "../api.js";
 import { useMounted } from "../hooks.js";
-import { IconFile, IconNew, IconPlus, IconTrash } from "../icons.jsx";
+import { IconFile, IconPlus, IconTrash } from "../icons.jsx";
 import { rememberSupplier } from "../suppliers.js";
-import { CategoryList } from "./CategoryMenu.jsx";
 import { DateField } from "./DateField.jsx";
-import { OTHER, ProductMenu, otherProduct } from "./ProductMenu.jsx";
-import { CreditToggle, PackPriceFields, PackSizeFields, SupplierMenu } from "./PurchaseFields.jsx";
+import { ProductLineFields } from "./ProductLine.jsx";
+import { ProductList } from "./ProductList.jsx";
+import { OTHER, otherProduct } from "./ProductMenu.jsx";
+import { CreditToggle, SupplierMenu } from "./PurchaseFields.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 
 const KINDS = ["receipt", "purchase", "product"];
@@ -59,8 +60,6 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
   const [reading, setReading] = useState(null);
   // Receipt review: today's shelf count typed per product, keyed by product id.
   const [shelf, setShelf] = useState({});
-  // The "+" beside a product on the Purchase tab: a product added without leaving the bill.
-  const [newProduct, setNewProduct] = useState(null);
   const hintId = useId();
   const canWrite = Boolean(pantry?.canWrite);
 
@@ -185,13 +184,33 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
     remember({ ...current, result: { ...current.result, ...patch } }, immediate);
   }
 
+  // "Add product" on a receipt: a blank line for an item the reading missed. It
+  // has no product until one is picked, and is added with the receipt's purchases.
+  function addReceiptLine() {
+    const current = readingRef.current;
+    if (!current?.result) return;
+    const id = `added-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const line = { id, added: true, printed: "", productId: "", productName: "", newName: "", matched: false, packs: "", pricePerPack: "", packSize: "", packUnit: "N.A", mrp: "", discarded: false, note: null, lineTotal: "" };
+    remember({ ...current, result: { ...current.result, lines: [...current.result.lines, line] } }, true);
+  }
+
+  // A product added from a line's picker: reload the pantry so every picker lists it.
+  async function productAdded(saved) {
+    try {
+      await onSaved?.();
+      if (mounted.current) onToast?.(`Added ${saved.name}.`);
+    } catch {
+      if (mounted.current) onToast?.(`Added ${saved.name}, but the screen could not refresh. Reload to see it in every list.`);
+    }
+  }
+
   function changeBillLine(key, patch) {
     setBill((current) => ({ ...current, lines: current.lines.map((line) => (line.key === key ? { ...line, ...patch } : line)) }));
     setBillError("");
   }
 
-  function choosePurchaseProduct(key, productId) {
-    const product = (pantry?.products || []).find((item) => item.productId === productId);
+  function choosePurchaseProduct(key, productId, picked) {
+    const product = picked || (pantry?.products || []).find((item) => item.productId === productId);
     const last = product?.latestPricePerPack ? String(product.latestPricePerPack) : "";
     setBill((current) => ({
       ...current,
@@ -210,33 +229,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
 
   function removeBillLine(key) {
     setBill((current) => ({ ...current, lines: current.lines.length > 1 ? current.lines.filter((line) => line.key !== key) : current.lines }));
-    if (newProduct?.lineKey === key) setNewProduct(null);
   }
-
-  async function addNewProduct() {
-    if (!newProduct || newProduct.busy) return;
-    const name = newProduct.name.trim();
-    if (!name) {
-      setNewProduct({ ...newProduct, error: "Enter a product name." });
-      return;
-    }
-    setNewProduct({ ...newProduct, busy: true, error: "" });
-    try {
-      const saved = await api(`/api/offices/${officeId}/products`, {
-        method: "POST",
-        body: { name },
-      });
-      await onSaved?.();
-      if (!mounted.current) return;
-      // Whatever was typed meanwhile stays; only that line's product changes.
-      changeBillLine(newProduct.lineKey, { productId: saved.productId });
-      setNewProduct(null);
-      onToast?.(`Added ${saved.name}.`);
-    } catch (err) {
-      if (mounted.current) setNewProduct((current) => (current ? { ...current, busy: false, error: err.message } : current));
-    }
-  }
-
 
   async function submitBill(event) {
     event.preventDefault();
@@ -294,7 +287,6 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       setLastSaved({ names, supplier: bill.supplier.trim(), onCredit: bill.onCredit, date: bill.date, total: billTotal(bill.lines) });
       if (bill.supplier.trim()) rememberSupplier(bill.supplier.trim());
       clearPurchaseFile();
-      setNewProduct(null);
       // Keep the date and supplier: the next bill is often from the same trip.
       setBill({ ...emptyBill(bill.date), supplier: bill.supplier, onCredit: bill.onCredit });
     }
@@ -418,6 +410,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       setSaving(false);
     };
     if (!lines.length) return stop("Choose at least one line to add.");
+    if (lines.some((line) => line.added && !line.productId && line.newName !== OTHER)) return stop("Choose a product on each line you added, or remove it.");
     const other = otherProduct((pantry?.products || []).filter((product) => !product.deletedAt));
     if (!latest.result.date || lines.some((line) => line.packs === "" || line.packs == null || line.pricePerPack === "" || line.pricePerPack == null)) {
       return stop("Enter a date, packs, and a price for each remaining line, or discard it.");
@@ -499,7 +492,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
   const lede = kind === "receipt"
     ? "One receipt can add several purchases. Nothing is saved until you approve it."
     : kind === "product"
-      ? "Product categories, shared by every office. Add one here."
+      ? `Products at ${officeName}. Add one by name.`
       : `${officeName}. One bill, its receipt, and every product on it.`;
   const visibleLines = (reading?.result?.lines || []).filter((line) => !line.discarded);
   const alert = readError || (reading?.status === "failed" ? reading.error : "");
@@ -552,92 +545,84 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
               </label>
               <div className="field">
                 <span>Supplier</span>
-                <SupplierMenu value={reading.result.supplier || ""} label="Supplier on this receipt" onChange={(supplier) => changeReceipt({ supplier }, true)} />
+                <SupplierMenu officeId={officeId} value={reading.result.supplier || ""} label="Supplier on this receipt" onChange={(supplier) => changeReceipt({ supplier }, true)} />
               </div>
               <div className="field wide">
                 <CreditToggle checked={reading.result.onCredit} onChange={(onCredit) => changeReceipt({ onCredit }, true)} />
               </div>
               <div className="field wide receipt-lines">
                 {visibleLines.length ? visibleLines.map((line) => {
-                  const name = line.productName || line.printed;
+                  const chosen = products.find((item) => item.productId === line.productId);
+                  const name = chosen?.name || line.productName || line.printed || "the added line";
                   const counts = line.productId && firstLine[line.productId] === line.id;
+                  // An added line has no product until one is picked; an unmatched line goes under Other.
+                  const unpicked = line.added && !line.productId && line.newName !== OTHER;
                   return (
-                    <article key={line.id} className={`receipt-line${line.productId ? "" : " unmatched"}`}>
+                    <article key={line.id} className={`receipt-line${line.productId || line.added ? "" : " unmatched"}`}>
                       <div className="receipt-line-head">
-                        <strong>{line.printed}</strong>
+                        <strong>{line.added ? chosen?.name || "New line" : line.printed}</strong>
                         <span className="line-head-end">
-                          {line.lineTotal ? <small className="muted">Printed {rupee(line.lineTotal)}</small> : null}
-                          <button className="icon-button" type="button" aria-label="Discard" title="Discard this line" onClick={() => changeLine(line.id, { discarded: true }, true)}>
+                          {line.added ? <small className="muted">Added by you</small> : line.lineTotal ? <small className="muted">Printed {rupee(line.lineTotal)}</small> : null}
+                          <button
+                            className="icon-button"
+                            type="button"
+                            aria-label={line.added ? "Remove" : "Discard"}
+                            title={line.added ? "Remove this line" : "Discard this line"}
+                            onClick={() => changeLine(line.id, { discarded: true }, true)}
+                          >
                             <IconTrash />
                           </button>
                         </span>
                       </div>
                       {line.note ? <p className="note" role="status">{line.note}</p> : null}
-                      <div className="fields">
-                        <div className="field wide">
-                          <span>Product</span>
-                          <ProductMenu
-                            products={products}
-                            value={line.productId || other?.productId || ""}
-                            label={`Product for ${line.printed}`}
-                            withOther
-                            onChange={(productId) => {
-                              const product = products.find((item) => item.productId === productId);
-                              changeLine(line.id, {
-                                productId: productId || "",
-                                productName: product?.name || "",
-                                matched: Boolean(productId),
-                                newName: productId ? "" : OTHER,
-                              }, true);
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="fields line-figures">
-                        <PackSizeFields compact size={line.packSize} unit={line.packUnit} label={name} onChange={(patch) => changeLine(line.id, patch, patch.packUnit !== line.packUnit)} />
-                        <PackPriceFields
-                          bare
-                          packs={line.packs ?? ""}
-                          price={line.pricePerPack ?? ""}
-                          initialTotal={line.lineTotal}
-                          label={name}
-                          onChange={(patch) => changeLine(line.id, {
-                            ...("packs" in patch ? { packs: patch.packs } : {}),
-                            ...("price" in patch ? { pricePerPack: patch.price } : {}),
-                          }, false)}
-                        />
-                      </div>
-                      <div className="fields line-extras">
-                        <label className="field">MRP (INR)
-                          <input inputMode="decimal" autoComplete="off" value={line.mrp ?? ""} onChange={(event) => changeLine(line.id, { mrp: event.target.value }, false)} />
-                        </label>
-                        {counts ? (
-                          <label className="field">On hand now (packs)
-                            <input
-                              inputMode="numeric"
-                              autoComplete="off"
-                              aria-describedby={`${hintId}-line-${line.id}`}
-                              value={shelf[line.productId] ?? String(onHandAfter(products.find((item) => item.productId === line.productId), reading.result.date, addedBy[line.productId]))}
-                              onChange={(event) => {
-                                const value = event.target.value;
-                                setShelf((current) => ({ ...current, [line.productId]: value }));
-                              }}
-                            />
-                          </label>
-                        ) : null}
-                      </div>
-                      {counts ? (
-                        <p className="field-hint on-hand-hint" id={`${hintId}-line-${line.id}`}>
-                          {shelfHint(products.find((item) => item.productId === line.productId), shelf[line.productId] !== undefined)}
-                        </p>
-                      ) : null}
+                      <ProductLineFields
+                        officeId={officeId}
+                        products={products}
+                        product={line.productId || (unpicked ? null : other?.productId || "")}
+                        withOther
+                        productLabel={`Product for ${line.added ? "the added line" : line.printed}`}
+                        label={name}
+                        onProduct={(productId, product) => changeLine(line.id, {
+                          productId: productId || "",
+                          productName: product?.name || "",
+                          matched: Boolean(productId),
+                          newName: productId ? "" : OTHER,
+                        }, true)}
+                        onProductAdded={productAdded}
+                        packSize={line.packSize}
+                        packUnit={line.packUnit}
+                        onPackSize={(patch) => changeLine(line.id, patch, patch.packUnit !== line.packUnit)}
+                        packs={line.packs}
+                        price={line.pricePerPack}
+                        initialTotal={line.lineTotal}
+                        onPackPrice={(patch) => changeLine(line.id, {
+                          ...("packs" in patch ? { packs: patch.packs } : {}),
+                          ...("price" in patch ? { pricePerPack: patch.price } : {}),
+                        }, false)}
+                        mrp={line.mrp}
+                        onMrp={(mrp) => changeLine(line.id, { mrp }, false)}
+                        onHand={counts ? {
+                          value: shelf[line.productId] ?? String(onHandAfter(chosen, reading.result.date, addedBy[line.productId])),
+                          hint: shelfHint(chosen, shelf[line.productId] !== undefined),
+                          onChange: (value) => setShelf((current) => ({ ...current, [line.productId]: value })),
+                        } : unpicked ? {
+                          value: "",
+                          disabled: true,
+                          hint: shelfHint(null, false),
+                          onChange: () => {},
+                        } : line.productId ? { elsewhere: `On hand for ${name} is on its first line.` } : null}
+                      />
                     </article>
                   );
                 }) : <p className="note">No lines left on this receipt.</p>}
+                <button className="ghost with-icon add-line" type="button" onClick={addReceiptLine}>
+                  <IconPlus /> Add product
+                </button>
               </div>
               {visibleLines.length ? (() => {
                 const items = Math.round(Number(billTotal(visibleLines.map((line) => ({ packs: line.packs, price: line.pricePerPack })))) * 100);
-                const discarded = (reading.result.lines || []).filter((line) => line.discarded).reduce((sum, line) => sum + linePaise(line), 0);
+                // A line added on review and removed again was never on the bill.
+                const discarded = (reading.result.lines || []).filter((line) => line.discarded && !line.added).reduce((sum, line) => sum + linePaise(line), 0);
                 const charges = chargePaise(reading.result.charges);
                 const shared = reading.result.discardedShare !== false;
                 // As on the server: lines discarded from the bill take their own share of the charges,
@@ -731,7 +716,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
       ) : null}
 
       {kind === "product" ? (
-        <CategoryList officeId={officeId} onToast={onToast} />
+        <ProductList officeId={officeId} officeName={officeName} products={products} onSaved={onSaved} onToast={onToast} />
       ) : null}
 
       {kind === "purchase" ? (
@@ -780,7 +765,7 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
             </label>
             <div className="field">
               <span>Supplier</span>
-              <SupplierMenu value={bill.supplier} label="Supplier on this bill" onChange={(supplier) => { setBill((current) => ({ ...current, supplier })); setBillError(""); }} />
+              <SupplierMenu officeId={officeId} value={bill.supplier} label="Supplier on this bill" onChange={(supplier) => { setBill((current) => ({ ...current, supplier })); setBillError(""); }} />
             </div>
             <div className="field wide">
               <CreditToggle checked={bill.onCredit} onChange={(onCredit) => { setBill((current) => ({ ...current, onCredit })); setBillError(""); }} />
@@ -802,84 +787,33 @@ export function RecordPanel({ pantry, officeId, officeName, onSubmit, onSaved, o
                         </button>
                       ) : null}
                     </div>
-                    <div className="field">
-                      <span id={`${hintId}-${line.key}-product`}>Product</span>
-                      <div className="product-row">
-                        <select aria-labelledby={`${hintId}-${line.key}-product`} value={line.productId} onChange={(event) => choosePurchaseProduct(line.key, event.target.value)}>
-                          <option value="">Choose a product</option>
-                          {products.map((product) => <option key={product.productId} value={product.productId}>{product.name}</option>)}
-                        </select>
-                        <button
-                          className="icon-button add-product"
-                          type="button"
-                          aria-label="New product"
-                          title="New product"
-                          aria-expanded={newProduct?.lineKey === line.key}
-                          onClick={() => setNewProduct(newProduct?.lineKey === line.key ? null : { lineKey: line.key, name: "", busy: false, error: "" })}
-                        >
-                          <IconNew size={20} />
-                        </button>
-                      </div>
-                    </div>
-                    {newProduct?.lineKey === line.key ? (
-                      <div className="new-product">
-                        <strong>New product at {officeName || "this office"}</strong>
-                        <div className="fields">
-                          <label className="field">Product name
-                            <input
-                              value={newProduct.name}
-                              maxLength={120}
-                              autoFocus
-                              autoComplete="off"
-                              onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value, error: "" })}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  addNewProduct();
-                                }
-                              }}
-                            />
-                          </label>
-                        </div>
-                        {newProduct.error ? <p className="error" role="alert">{newProduct.error}</p> : null}
-                        <div className="row-actions">
-                          <button className="solid small" type="button" onClick={addNewProduct} disabled={newProduct.busy}>{newProduct.busy ? "Saving…" : "Save product"}</button>
-                          <button className="ghost small" type="button" onClick={() => setNewProduct(null)} disabled={newProduct.busy}>Cancel</button>
-                        </div>
-                      </div>
-                    ) : null}
-                    <PackSizeFields size={line.packSize} unit={line.packUnit} label={title} onChange={(patch) => changeBillLine(line.key, patch)} />
-                    <PackPriceFields
+                    <ProductLineFields
+                      officeId={officeId}
+                      products={products}
+                      product={line.productId}
+                      productLabel={`Product for ${title}`}
+                      label={title}
+                      onProduct={(productId, product) => choosePurchaseProduct(line.key, productId, product)}
+                      onProductAdded={productAdded}
+                      packSize={line.packSize}
+                      packUnit={line.packUnit}
+                      onPackSize={(patch) => changeBillLine(line.key, patch)}
                       packs={line.packs}
                       price={line.price}
-                      label={title}
-                      onChange={(patch) => changeBillLine(line.key, { ...patch, ...("price" in patch ? { prefilled: line.prefilled === patch.price ? line.prefilled : "" } : {}) })}
+                      onPackPrice={(patch) => changeBillLine(line.key, { ...patch, ...("price" in patch ? { prefilled: line.prefilled === patch.price ? line.prefilled : "" } : {}) })}
+                      mrp={line.mrp}
+                      onMrp={(mrp) => changeBillLine(line.key, { mrp })}
+                      note={line.prefilled && line.prefilled === line.price ? <p className="note">Price filled in from the last price this month. Change it if the bill differs.</p> : null}
+                      onHand={showCount || !line.productId ? {
+                        value: onHandValue,
+                        disabled: !chosen,
+                        hint: shelfHint(chosen, onHandTouched),
+                        onChange: (value) => {
+                          setBill((current) => ({ ...current, onHand: { ...current.onHand, [line.productId]: value } }));
+                          setBillError("");
+                        },
+                      } : { elsewhere: `On hand for ${chosen?.name || "this product"} is on its first card.` }}
                     />
-                    {line.prefilled && line.prefilled === line.price ? <p className="note">Price filled in from the last price this month. Change it if the bill differs.</p> : null}
-                    <div className="fields">
-                      <label className="field">MRP (INR)
-                        <input inputMode="decimal" autoComplete="off" value={line.mrp} onChange={(event) => changeBillLine(line.key, { mrp: event.target.value })} />
-                      </label>
-                      {showCount || !line.productId ? (
-                        <label className="field">On hand now (packs)
-                          <input
-                            inputMode="numeric"
-                            autoComplete="off"
-                            value={onHandValue}
-                            disabled={!chosen}
-                            aria-describedby={`${hintId}-${line.key}-onhand`}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setBill((current) => ({ ...current, onHand: { ...current.onHand, [line.productId]: value } }));
-                              setBillError("");
-                            }}
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                    {showCount || !line.productId ? (
-                      <p className="field-hint on-hand-hint" id={`${hintId}-${line.key}-onhand`}>{shelfHint(chosen, onHandTouched)}</p>
-                    ) : <p className="note">On hand for {chosen?.name || "this product"} is on its first card.</p>}
                   </article>
                 );
               })}
@@ -948,8 +882,11 @@ function patchBody(next) {
     discardedShare: next.result?.discardedShare !== false,
     lines: (next.result?.lines || []).map((line) => ({
       id: line.id,
+      // A line added on review has no product until one is picked; a line the
+      // reading could not match goes under Other.
+      ...(line.added ? { added: true } : {}),
       productId: line.productId || "",
-      newName: line.productId ? "" : OTHER,
+      newName: line.productId ? "" : line.added ? line.newName || "" : OTHER,
       packs: line.packs ?? "",
       pricePerPack: line.pricePerPack ?? "",
       packSize: line.packSize ?? "",
