@@ -145,19 +145,7 @@ async def export(request: Request, office_id: str):
 @router.post("/api/offices/{office_id}/products", status_code=201)
 async def create_product(request: Request, office_id: str):
     db, actor, body = context(request)
-    return await i.create_product(db, actor, office_id, body.get("name"), body.get("category"))
-
-
-@router.get("/api/categories")
-async def categories(request: Request):
-    db, actor, _ = context(request)
-    return {"categories": await i.list_categories(db, actor)}
-
-
-@router.post("/api/offices/{office_id}/categories", status_code=201)
-async def create_category(request: Request, office_id: str):
-    db, actor, body = context(request)
-    return await i.create_category(db, actor, office_id, body.get("name"))
+    return await i.create_product(db, actor, office_id, body.get("name"))
 
 
 @router.patch("/api/products/{product_id}")
@@ -194,6 +182,12 @@ async def create_purchases(request: Request, office_id: str):
 async def supplier_list(request: Request):
     db, actor, _ = context(request)
     return {"suppliers": await suppliers.list_suppliers(db, actor)}
+
+
+@router.post("/api/offices/{office_id}/suppliers", status_code=201)
+async def create_supplier(request: Request, office_id: str):
+    db, actor, body = context(request)
+    return await suppliers.create_supplier(db, actor, office_id, body.get("name"))
 
 
 @router.get("/api/offices/{office_id}/payables")

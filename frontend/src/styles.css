@@ -400,10 +400,12 @@ a.microsoft { width: 100%; margin-top: 8px; }
   border-radius: 6px;
   padding: 28px 28px 24px;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(220px, 0.95fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(220px, 0.8fr);
   gap: 24px;
   box-shadow: var(--shadow);
 }
+/* Each column sizes its own figure, so a long amount stays inside it. */
+.hero > div { container-type: inline-size; }
 .hero-forecast p { margin: 0; color: #cfcfcf; }
 .hero-forecast .eyebrow { color: var(--accent); }
 .forecast-figure {
@@ -425,7 +427,8 @@ a.microsoft { width: 100%; margin-top: 8px; }
   text-transform: uppercase;
   margin: 0 0 8px;
 }
-.hero h1 { margin: 0; font-size: clamp(36px, 5vw, 58px); font-weight: 900; letter-spacing: -0.04em; }
+.hero h1,
+.hero .credit-figure { margin: 0; font-size: clamp(26px, min(5vw, 16cqi), 58px); font-weight: 900; letter-spacing: -0.04em; overflow-wrap: anywhere; }
 .hero-side { align-self: end; }
 .hero-side p { margin: 0; color: #cfcfcf; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
@@ -693,27 +696,15 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .receipt-line.unmatched { border-left: 3px solid var(--accent); }
 .receipt-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
-/* Product picker with "+" on the Purchase tab, and the new-product box it opens. */
-.product-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
-.product-row select { flex: 1 1 auto; min-width: 0; }
-.product-row .add-product { width: 46px; height: auto; min-height: 46px; flex: none; }
-.product-row .add-product[aria-expanded="true"] { border-color: var(--ink); }
-.new-product {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--soft);
-  padding: 12px;
-}
-.new-product strong { font-weight: 500; color: var(--ink); }
+/* "+ Add product" / "+ Add supplier" in a picker: the name box with Use, and its error. */
+.inline-add { display: grid; gap: 6px; min-width: 0; }
+.inline-add .error { margin: 0; }
 
-/* Category: inline "new category" box and the label shown beside a product. */
-.category-new { display: grid; gap: 6px; }
+/* A name box with its button on one line, and a small label such as "On credit". */
 .inline-input { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .inline-input input { flex: 1 1 auto; min-width: 0; }
-.inline-input .solid.small { min-height: 40px; }
-.category-tag {
+.inline-input .solid.small { min-height: 40px; flex: none; white-space: nowrap; }
+.tag {
   display: inline-block;
   max-width: 100%;
   margin-top: 4px;
@@ -725,24 +716,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   line-height: 18px;
   overflow-wrap: anywhere;
 }
-.purchase-row .category-tag { margin-left: 8px; vertical-align: 2px; }
-.category-filter {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 8px 32px 8px 12px;
-  color: var(--ink);
-  font: inherit;
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-}
-.category-filter:hover { border-color: var(--muted); }
-.category-filter:focus { border-color: var(--ink); }
+.purchase-row .tag { margin-left: 8px; vertical-align: 2px; }
 .receipt-line-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .receipt-line-head strong { min-width: 0; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1130,7 +1104,6 @@ button.office-card:hover { background: var(--soft); }
 .access-form select,
 .access-search input,
 .search-field input,
-.product-row select,
 .inline-input input {
   width: 100%;
   min-height: 46px;
@@ -1150,7 +1123,6 @@ button.office-card:hover { background: var(--soft); }
 .access-form select:hover,
 .access-search input:hover,
 .search-field input:hover,
-.product-row select:hover,
 .inline-input input:hover,
 .sign-form input:hover:not([readonly]),
 .product-button:hover:not(:disabled) { border-color: var(--muted); }
@@ -1161,12 +1133,10 @@ button.office-card:hover { background: var(--soft); }
 .access-form select:focus,
 .access-search input:focus,
 .search-field input:focus,
-.product-row select:focus,
 .inline-input input:focus,
 .sign-form input:focus { border-color: var(--ink); }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 .field > select,
-.product-row select,
 .access-form select {
   appearance: none;
   padding-right: 42px;
@@ -1652,7 +1622,7 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
     gap: 4px 14px;
   }
   .hero .eyebrow { font-size: 10px; margin-bottom: 4px; }
-  .hero h1 { font-size: 26px; }
+  .hero h1, .hero .credit-figure { font-size: min(26px, 16cqi); }
   .hero .forecast-figure { font-size: 22px; letter-spacing: -0.02em; }
   .hero > div:first-child > p:not(.eyebrow), .hero-explain { display: none; }
   .hero-side { grid-column: 1 / -1; align-self: start; }
@@ -1788,11 +1758,14 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
 .payment-form { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); padding: 12px; }
 .payables-heading { margin: 22px 0 0; font-size: 15px; font-weight: 500; }
 
-/* Credit due on the Stock summary. */
-.hero-credit { margin-bottom: 12px; }
-.credit-figure { margin: 0; font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -0.03em; color: #fff; font-variant-numeric: tabular-nums; }
-.hero-link { background: transparent; border: 0; padding: 0; color: #cfcfcf; font: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.hero-link:hover { color: #fff; }
+/* Credit due on the Stock summary: the middle column, read like Spent.
+   Next month and the stock line share the right column. */
+.hero-credit { min-width: 0; }
+.hero-credit .hero-link { margin-top: 1em; }
+.hero-link { display: inline-block; background: transparent; border: 0; padding: 0; color: var(--hero-ink); font: inherit; text-align: left; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.4); text-underline-offset: 4px; cursor: pointer; }
+.hero-link:hover { text-decoration-color: currentColor; }
+.hero-side-forecast { align-self: stretch; display: flex; flex-direction: column; }
+.hero-side-forecast .hero-status { margin-top: auto; padding-top: 16px; }
 
 @media (max-width: 980px) {
   .payable-row { grid-template-columns: minmax(0, 1fr); }
@@ -1803,8 +1776,10 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
   .pack-price > .field:last-child { grid-column: 1 / -1; }
   .payables-totals { grid-template-columns: minmax(0, 1fr); }
   .payable-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hero-credit { margin-bottom: 6px; }
-  .credit-figure { font-size: 22px; }
+  .hero-credit .hero-link { margin-top: 2px; font-size: 13px; }
+  /* Phones: Spent and Credit due on the first row; Next month and the stock line under them. */
+  .hero-side-forecast { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 14px; align-items: end; margin-top: 8px; }
+  .hero-side-forecast .hero-status { padding-top: 0; }
 }
 
 /* Receipt review: one compact row of figures per line. */
@@ -1850,5 +1825,6 @@ input::placeholder { color: var(--muted); opacity: 0.8; }
   .pack-inline input { padding: 12px 6px 12px 10px; }
   .pack-inline select { width: 62px; padding-right: 22px; background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%; }
 }
-.category-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.category-list .category-tag { margin-top: 0; font-size: 14px; line-height: 22px; color: var(--ink); }
+/* Record → Product: the office's products. */
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tag-list .tag { margin-top: 0; font-size: 14px; line-height: 22px; color: var(--ink); }

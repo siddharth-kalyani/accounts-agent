@@ -189,8 +189,7 @@ export function Purchases({ officeId, officeName, month, monthName, revision, ca
           <article className="purchase-row" key={row.purchaseId}>
             <div>
               <strong>{row.product}</strong>
-              {row.category ? <span className="category-tag">{row.category}</span> : null}
-              {row.onCredit ? <span className="category-tag credit-tag">On credit</span> : null}
+              {row.onCredit ? <span className="tag credit-tag">On credit</span> : null}
               <p className="muted">{indiaDate(row.date)} · {row.packs} {row.packs === 1 ? "pack" : "packs"} at {rupee(row.pricePerPack)}{packSummary(row.packs, row.packSize, row.packUnit) ? ` · ${packSummary(row.packs, row.packSize, row.packUnit)}` : ""}</p>
               {row.supplier ? <small className="muted">From {row.supplier}</small> : null}
               {printedDetails(row) ? <small className="muted">{printedDetails(row)}</small> : null}

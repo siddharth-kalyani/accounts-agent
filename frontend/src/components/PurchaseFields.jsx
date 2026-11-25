@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { IconClose } from "../icons.jsx";
-import { useSuppliers } from "../suppliers.js";
-import { PickMenu } from "./PickMenu.jsx";
+import { api } from "../api.js";
+import { rememberSupplier, useSuppliers } from "../suppliers.js";
+import { PickOrAdd } from "./PickMenu.jsx";
 
 export const PACK_UNITS = ["N.A", "ml", "L", "g", "kg", "pcs"];
 
@@ -161,73 +161,34 @@ export function PackSizeFields({ size, unit, onChange, label = "", compact = fal
   );
 }
 
-const OTHER = "\u0000other";
-
-// Supplier picker: suppliers already used on any bill, plus "Other supplier"
-// to type a new name. A new name is added when the purchase is saved.
-export function SupplierMenu({ value, onChange, label = "Supplier" }) {
+// Supplier picker: the shared supplier list, plus "+ Add supplier" to type a new
+// name. Use saves it to the list at once (`POST /api/offices/{id}/suppliers`); a
+// name already listed under another spelling picks that one. A seller read from a
+// receipt that is not listed yet shows as "New supplier" until the receipt is added.
+export function SupplierMenu({ officeId, value, onChange, label = "Supplier" }) {
   const suppliers = useSuppliers();
-  const [typing, setTyping] = useState(false);
-  const [name, setName] = useState("");
   const listed = suppliers.some((item) => item.toLowerCase() === String(value || "").toLowerCase());
   const options = [
     { value: "", label: "No supplier" },
     ...(value && !listed ? [{ value, label: value, detail: "New supplier" }] : []),
     ...suppliers.map((item) => ({ value: item, label: item })),
-    { value: OTHER, label: "+ Other supplier", detail: "Type the name" },
   ];
 
-  function use() {
-    const clean = name.trim().replace(/\s+/g, " ");
-    if (!clean) return;
-    onChange(clean);
-    setTyping(false);
-    setName("");
-  }
-
-  if (typing) {
-    return (
-      <div className="inline-input" data-escape-local>
-        <input
-          value={name}
-          maxLength={120}
-          autoFocus
-          autoComplete="off"
-          placeholder="Supplier name"
-          aria-label="Supplier name"
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              use();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              setTyping(false);
-            }
-          }}
-        />
-        <button className="solid small" type="button" onClick={use} disabled={!name.trim()}>Use</button>
-        <button className="icon-button" type="button" aria-label="Cancel other supplier" title="Cancel" onClick={() => setTyping(false)}>
-          <IconClose />
-        </button>
-      </div>
-    );
+  async function add(name) {
+    const saved = await api(`/api/offices/${officeId}/suppliers`, { method: "POST", body: { name } });
+    rememberSupplier(saved.name);
+    onChange(saved.name);
   }
 
   return (
-    <PickMenu
+    <PickOrAdd
       options={options}
       value={value || ""}
-      onChange={(next) => {
-        if (next === OTHER) {
-          setName("");
-          setTyping(true);
-          return;
-        }
-        onChange(next);
-      }}
+      onChange={onChange}
+      onAdd={officeId ? add : undefined}
+      addLabel="Add supplier"
+      nameLabel="Supplier name"
+      cancelLabel="Cancel new supplier"
       label={label}
       placeholder="No supplier"
       searchLabel="Search suppliers"

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "./api.js";
 
 // One shared list of suppliers for every screen, loaded once per page. A
-// supplier is added on the server when a purchase first names it; `remember`
-// keeps a just-used name in the list without reloading.
+// supplier is added on the server from "+ Add supplier", or when a purchase first
+// names it; `remember` keeps a just-added name in the list without reloading.
 let cached = null;
 let loading = null;
 const listeners = new Set();

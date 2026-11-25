@@ -30,16 +30,15 @@ def opening_count_date(today):
     return calc.add_days(today, -1)
 
 
-async def insert_product(db, actor, office_id, name, at=None, starts_on=None, category=None):
+async def insert_product(db, actor, office_id, name, at=None, starts_on=None):
     """`starts_on` is the product's first day; default today in India.
 
     A product made from an older receipt starts on that receipt's date, so its
     opening count falls before the purchase and the purchase adds to on-hand.
-    `category` is an already resolved category name, or None.
     """
     at = at or stamp()
     product_id = new_id()
-    await db.run("INSERT INTO pantry_product (id, office_id, name, reorder_level, warning_effective_days, created_by, created_at, category) VALUES (?, ?, ?, 0, 5, ?, ?, ?)", product_id, office_id, name, actor["id"], at, category)
+    await db.run("INSERT INTO pantry_product (id, office_id, name, reorder_level, warning_effective_days, created_by, created_at) VALUES (?, ?, ?, 0, 5, ?, ?)", product_id, office_id, name, actor["id"], at)
     await db.run("INSERT INTO pantry_count (id, product_id, counted_on, packs, created_by, created_at) VALUES (?, ?, ?, 0, ?, ?)", new_id(), product_id, opening_count_date(starts_on or calc.today_in_india(now())), actor["id"], at)
     return product_id
 
@@ -188,9 +187,7 @@ async def get_pantry(db, person, office_id, month=None, *, series=True, config=N
         live = [c for c in counts if not c.get("deletedAt") and c["countedOn"] <= today]
         hand = [c["countedOn"] for c in live if not c["automatic"]]
         row = {"productId": product["id"], "name": product["name"], "deletedAt": product["deleted_at"], "createdBy": names.get(product["created_by"], "Unknown"), "createdAt": product["created_at"], "createdAtLabel": calc.format_when(product["created_at"]), **math_result, **month_stats, "history": calc.month_history(purchases, config, today), "forecast": forecast, "hasReceipt": bool(receipt), "countDates": sorted({c["countedOn"] for c in counts if not c.get("deletedAt")}),
-               "todayCount": next((c["packs"] for c in live if c["countedOn"] == today), None), "lastCountedOn": max(hand, default=None), "countedDays": calc.counted_days(counts, config, today),
-               # Present only when chosen, so products without one read as before.
-               **({"category": product["category"]} if product.get("category") else {})}
+               "todayCount": next((c["packs"] for c in live if c["countedOn"] == today), None), "lastCountedOn": max(hand, default=None), "countedDays": calc.counted_days(counts, config, today)}
         if series:
             row["series"] = calc.stock_series(purchases=purchases, counts=counts, settings=config, today=today, burnRate=math_result["burnRatePerEffectiveDay"], expectedDate=math_result["expectedDate"], onHand=math_result["onHand"])
         products.append(row)
@@ -225,44 +222,9 @@ def validate_product_name(name):
         raise HttpError(422, "A product name needs 1 to 120 characters without control characters.")
 
 
-@scoped
-async def list_categories(db, person):
-    """Every product category, shared by all offices. Other comes last."""
-    await live_person(db, person)
-    names = [r["name"] for r in await db.all("SELECT name FROM product_category")]
-    return sorted(names, key=lambda name: (name.casefold() == "other", name.casefold()))
-
-
 @transactional
-async def create_category(db, person, office_id, name):
-    """Anyone who can record purchases at an office can add a category."""
-    person = await live_person(db, person)
-    require_write(person, office_id)
-    clean = re.sub(r"\s+", " ", text(name or "")).strip()
-    if not clean or len(clean) > 60 or re.search(r"[\x00-\x1f]", clean):
-        raise HttpError(422, "A category name needs 1 to 60 characters.")
-    existing = await db.get("SELECT name FROM product_category WHERE name = ? COLLATE NOCASE", clean)
-    if existing:
-        return {"name": existing["name"], "created": False}
-    category_id = new_id()
-    await db.run("INSERT INTO product_category (id, name, created_by, created_at) VALUES (?, ?, ?, ?)", category_id, clean, person["id"], stamp())
-    await log(db, person["id"], "category.create", "category", category_id, office_id, f"Added the category {clean}.")
-    return {"name": clean, "created": True}
-
-
-async def resolve_category(db, value):
-    """A category from the list, by name ignoring case. Blank is no category."""
-    clean = re.sub(r"\s+", " ", text(value or "")).strip() if value is not None else ""
-    if not clean:
-        return None
-    row = await db.get("SELECT name FROM product_category WHERE name = ? COLLATE NOCASE", clean)
-    if not row:
-        raise HttpError(422, "Choose a category from the list.")
-    return row["name"]
-
-
-@transactional
-async def create_product(db, person, office_id, name, category=None):
+async def create_product(db, person, office_id, name):
+    """A product is named for what it is (Milk, Coffee); there are no categories."""
     person = await live_person(db, person)
     require_write(person, office_id)
     office = await office_by_id(db, office_id)
@@ -270,12 +232,11 @@ async def create_product(db, person, office_id, name, category=None):
         raise HttpError(404, "Office not found.")
     clean = text(name or "").strip()
     validate_product_name(clean)
-    chosen = await resolve_category(db, category)
     if await db.get("SELECT id FROM pantry_product WHERE office_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL", office_id, clean):
         raise HttpError(422, f"{clean} is already on this office's pantry.")
-    product_id = await insert_product(db, person, office_id, clean, category=chosen)
+    product_id = await insert_product(db, person, office_id, clean)
     await log(db, person["id"], "product.create", "product", product_id, office_id, f"Added {clean} at {office['name']}.")
-    return {"productId": product_id, "name": clean, **({"category": chosen} if chosen else {})}
+    return {"productId": product_id, "name": clean}
 
 
 @transactional
@@ -296,20 +257,18 @@ async def update_product(db, person, product_id, body):
     if not math.isfinite(warning) or warning != int(warning) or not 1 <= warning <= 366:
         raise HttpError(422, "Warn from 1 to 366 working days ahead.")
     on_hand = parse_packs(body["onHand"], allow_zero=True) if body.get("onHand") is not None else None
-    # Only a request that names a category changes it; null or "" clears it.
-    category = await resolve_category(db, body["category"]) if "category" in body else product.get("category")
     if await db.get("SELECT id FROM pantry_product WHERE office_id = ? AND name = ? COLLATE NOCASE AND deleted_at IS NULL AND id != ?", product["office_id"], name, product_id):
         raise HttpError(422, "That product name is already in use at this office.")
-    changed = (name, int(reorder), int(warning), category) != (product["name"], product["reorder_level"], product["warning_effective_days"], product.get("category"))
+    changed = (name, int(reorder), int(warning)) != (product["name"], product["reorder_level"], product["warning_effective_days"])
     if changed or on_hand is None:
-        await db.run("UPDATE pantry_product SET name = ?, reorder_level = ?, warning_effective_days = ?, category = ? WHERE id = ?", name, int(reorder), int(warning), category, product_id)
-        action = "product.rename" if name != product["name"] else "product.category" if category != product.get("category") else "product.reorder"
+        await db.run("UPDATE pantry_product SET name = ?, reorder_level = ?, warning_effective_days = ? WHERE id = ?", name, int(reorder), int(warning), product_id)
+        action = "product.rename" if name != product["name"] else "product.reorder"
         await log(db, person["id"], action, "product", product_id, product["office_id"], f"Updated {name}.")
     if on_hand is not None:
         if product["deleted_at"]:
             raise HttpError(422, "That product is not available for a new entry.")
         await write_count(db, person, product["office_id"], {**product, "name": name}, calc.today_in_india(now()), on_hand)
-    return {"productId": product_id, "name": name, **({"category": category} if category else {})}
+    return {"productId": product_id, "name": name}
 
 
 @transactional
@@ -868,12 +827,12 @@ async def list_purchases(db, person, office_id, month):
     person = await live_person(db, person)
     require_view(person, office_id)
     validate_month(month)
-    rows = await db.all("""SELECT u.*, p.name, p.category AS product_category, a.display_name, r.file_name FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id
+    rows = await db.all("""SELECT u.*, p.name, a.display_name, r.file_name FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id
         LEFT JOIN person a ON a.id = u.created_by LEFT JOIN pantry_receipt r ON r.purchase_id = u.id AND r.deleted_at IS NULL
         WHERE p.office_id = ? AND u.deleted_at IS NULL AND u.purchased_on LIKE ? ORDER BY u.purchased_on DESC, u.created_at DESC""", office_id, month + "-%")
     return [{"purchaseId": r["id"], "product": r["name"], "date": r["purchased_on"], "packs": r["packs"], "pricePerPack": r["price_per_pack"], "amount": calc.money(r["packs"], r["price_per_pack"]), "enteredBy": r["display_name"] or "Unknown", "receiptName": r["file_name"] or None,
              # Printed receipt details appear only when they were kept, so older purchases read as before.
-             **{key: r[column] for key, column in (("mrp", "mrp"), ("taxPercent", "tax_percent"), ("discount", "discount"), ("category", "product_category"), ("packSize", "pack_size"), ("packUnit", "pack_unit"), ("supplier", "supplier")) if r.get(column)},
+             **{key: r[column] for key, column in (("mrp", "mrp"), ("taxPercent", "tax_percent"), ("discount", "discount"), ("packSize", "pack_size"), ("packUnit", "pack_unit"), ("supplier", "supplier")) if r.get(column)},
              **({"onCredit": True} if r.get("on_credit") else {})} for r in rows]
 
 

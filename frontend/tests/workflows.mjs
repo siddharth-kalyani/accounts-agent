@@ -33,16 +33,27 @@ export async function extendedWorkflows({ page, browser, app }) {
   await office('Ahmedabad');
   await nav('Record');
   await nav('Product');
-  // The Product tab keeps the shared category list; products come from a bill.
-  assert.equal(await page.locator('.record-form').getByLabel('Name', { exact: true }).count(), 0);
-  await page.locator('.record-form').getByLabel('New category').fill('Browser grains');
-  await nav('Add');
-  await expect(page.locator('.category-list')).toContainText('Browser grains');
+  // The Product tab adds a product to this office by name; there are no categories.
+  await page.locator('.record-form').getByLabel('Product name', { exact: true }).fill('browser grains ');
+  await nav('Add product');
+  await expect(page.locator('.tag-list')).toContainText('browser grains');
+  await expect(page.locator('.record-form').getByLabel('Product name', { exact: true })).toHaveValue('');
+  // A name the office already has is refused before anything is sent.
+  await page.locator('.record-form').getByLabel('Product name', { exact: true }).fill('Milk');
+  await nav('Add product');
+  await expect(page.locator('.record-form').getByRole('alert')).toHaveText("Milk is already on this office's pantry.");
+  assert.equal(await page.locator('.record-card').getByText(/categor/i).count(), 0);
   await nav('Purchase');
-  await page.locator('.purchase-line').first().getByRole('button', { name: 'New product', exact: true }).click();
-  await page.locator('.new-product').getByLabel('Product name', { exact: true }).fill('Browser oats');
-  await page.locator('.new-product').getByRole('button', { name: 'Save product', exact: true }).click();
-  await expect(page.locator('.new-product')).toHaveCount(0);
+  // "+ Add product" in the product menu takes what was searched, saves it as a
+  // product at once with Use, and picks it on that card.
+  const oatsCard = page.locator('.purchase-line').first();
+  await oatsCard.getByRole('button', { name: 'Choose a product', exact: true }).click();
+  await oatsCard.getByLabel('Search products').fill('Browser oats');
+  await oatsCard.getByRole('option', { name: /Add product/ }).click();
+  await expect(oatsCard.getByLabel('Product name', { exact: true })).toHaveValue('Browser oats');
+  await oatsCard.getByRole('button', { name: 'Use', exact: true }).click();
+  await expect(oatsCard.getByRole('button', { name: 'Browser oats', exact: true })).toBeVisible();
+  await expect(oatsCard.locator('.receipt-line-head strong')).toHaveText('Browser oats');
   await page.locator('.side').getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('Lookback months').fill('4');
   await page.getByLabel('Weekend weight').fill('0.3');

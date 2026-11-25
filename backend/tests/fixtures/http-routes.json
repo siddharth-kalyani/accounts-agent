@@ -25,10 +25,6 @@
   ],
   [
     "GET",
-    "/api/categories"
-  ],
-  [
-    "GET",
     "/api/chat/threads"
   ],
   [
@@ -169,10 +165,6 @@
   ],
   [
     "POST",
-    "/api/offices/{}/categories"
-  ],
-  [
-    "POST",
     "/api/offices/{}/manager"
   ],
   [
@@ -206,6 +198,10 @@
   [
     "POST",
     "/api/offices/{}/settings-preview"
+  ],
+  [
+    "POST",
+    "/api/offices/{}/suppliers"
   ],
   [
     "POST",

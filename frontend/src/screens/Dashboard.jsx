@@ -159,8 +159,6 @@ export function Dashboard({ theme, onSignOut }) {
   const [pantryFailed, setPantryFailed] = useState(false);
   const [activity, setActivity] = useState(null);
   const [stockQuery, setStockQuery] = useState("");
-  // Stock category filter: null shows every category, "" shows products with none.
-  const [stockCategory, setStockCategory] = useState(null);
   const [activityQuery, setActivityQuery] = useState("");
   const [health, setHealth] = useState(null);
   const [view, setView] = useState(() => (PANTRY_VIEWS.includes(starting.current.view) ? starting.current.view : "stock"));
@@ -437,11 +435,7 @@ export function Dashboard({ theme, onSignOut }) {
 
   const products = (pantry?.products || []).filter((product) => !product.deletedAt);
   const stockNeedle = stockQuery.trim().toLowerCase();
-  // Categories in use at this office, for the Stock filter. "" is no category.
-  const stockCategories = [...new Set(products.map((product) => product.category || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
-  const categoryShown = stockCategory === null || stockCategories.includes(stockCategory) ? stockCategory : null;
-  const stockList = products.filter((product) => (categoryShown === null || (product.category || "") === categoryShown)
-    && (!stockNeedle || product.name.toLowerCase().includes(stockNeedle) || (product.category || "").toLowerCase().includes(stockNeedle) || statusLabel(stockState(product)).toLowerCase().includes(stockNeedle)));
+  const stockList = products.filter((product) => !stockNeedle || product.name.toLowerCase().includes(stockNeedle) || statusLabel(stockState(product)).toLowerCase().includes(stockNeedle));
   const officeList = (summary?.offices || []).filter((office) => !stockNeedle || office.name.toLowerCase().includes(stockNeedle));
   const activityNeedle = activityQuery.trim().toLowerCase();
   const activityFilter = (ACTIVITY_KINDS.find(([id]) => id === activityKind) || ACTIVITY_KINDS[0])[2];
@@ -808,33 +802,33 @@ export function Dashboard({ theme, onSignOut }) {
                   </p>
                 ) : null}
               </div>
-              <div className="hero-forecast">
-                <p className="eyebrow">Next month</p>
-                <p className="forecast-figure">{forecastSpend ? rupee(forecastSpend) : "Not yet"}</p>
-                <p className="hero-explain" title={forecastDays ? `${forecastDays} working days, with weekends counted at the company weekend weight` : undefined}>
-                  {forecastSpend && forecastMonth
-                    ? `Estimate for ${monthLabel(forecastMonth)} if use continues at the current rate.`
-                    : "Shown after two weeks of shelf counts."}
-                </p>
-              </div>
-              <div className="hero-side">
-                {allOffices ? (
-                  <p>Due stays on each office.</p>
-                ) : (
-                  <>
+              {allOffices ? (
+                <>
+                  <HeroForecast spend={forecastSpend} month={forecastMonth} days={forecastDays} />
+                  <div className="hero-side">
+                    <p>Due stays on each office.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Credit due sits in the middle and reads like Spent. The column stays while it loads, so Next month does not jump. */}
+                  <div className="hero-credit">
                     {creditDue?.officeId === officeId ? (
-                      <div className="hero-credit">
+                      <>
                         <p className="eyebrow">Credit due</p>
                         <p className="credit-figure">{rupee(creditDue.due)}</p>
                         <button className="hero-link" type="button" onClick={() => openView("payables")}>
                           {creditDue.suppliers ? `To clear with ${creditDue.suppliers} ${creditDue.suppliers === 1 ? "supplier" : "suppliers"}` : "Nothing to clear"}
                         </button>
-                      </div>
+                      </>
                     ) : null}
-                    <p>{heroStatus(outOfStock, due)}</p>
-                  </>
-                )}
-              </div>
+                  </div>
+                  <div className="hero-side hero-side-forecast">
+                    <HeroForecast spend={forecastSpend} month={forecastMonth} days={forecastDays} />
+                    <p className="hero-status">{heroStatus(outOfStock, due)}</p>
+                  </div>
+                </>
+              )}
             </section>
           ) : !officeFailed ? (
             <Skeleton label={`Loading ${monthName}.`} variant="hero" />
@@ -885,17 +879,6 @@ export function Dashboard({ theme, onSignOut }) {
                   aria-label={allOffices ? "Search offices" : "Search products"}
                   onChange={(event) => setStockQuery(event.target.value)}
                 />
-                {!allOffices && stockCategories.some(Boolean) ? (
-                  <select
-                    className="category-filter"
-                    aria-label="Filter by category"
-                    value={categoryShown === null ? "\u0000all" : categoryShown}
-                    onChange={(event) => setStockCategory(event.target.value === "\u0000all" ? null : event.target.value)}
-                  >
-                    <option value={"\u0000all"}>All categories</option>
-                    {stockCategories.map((category) => <option key={category || "none"} value={category}>{category || "No category"}</option>)}
-                  </select>
-                ) : null}
                 <button
                   className="ghost"
                   type="button"
@@ -948,7 +931,6 @@ export function Dashboard({ theme, onSignOut }) {
                       <article className={`product${state === "out" ? " is-out" : ""}`} key={product.productId}>
                         <div className="product-name">
                           <h3>{product.name}</h3>
-                          {product.category ? <span className="category-tag">{product.category}</span> : null}
                         </div>
                         <p className="stat">
                           <small className="muted">On hand today</small>{state === "out" ? "None left" : packs(product.onHand)}
@@ -974,13 +956,13 @@ export function Dashboard({ theme, onSignOut }) {
                         </p>
                         <div className="product-end">
                           <span className={`pill ${state}`}>{statusLabel(state)}</span>
-                          {pantry.canWrite ? <ProductEditor product={product} officeId={officeId} onSaved={refresh} onToast={pushToast} /> : null}
+                          {pantry.canWrite ? <ProductEditor product={product} onSaved={refresh} onToast={pushToast} /> : null}
                         </div>
                         {/* While counts build up, Runs out already says how long; other messages explain a problem. */}
                         {product.message && !learning && Number(product.countedDays) >= FORECAST_COUNT_DAYS ? <p className="note">{product.message}</p> : null}
                       </article>
                     );
-                  }) : stockQuery.trim() || categoryShown !== null ? (
+                  }) : stockQuery.trim() ? (
                     <p className="note">No product matches that search.</p>
                   ) : (
                     <EmptyState
@@ -1148,6 +1130,18 @@ function heroStatus(out, due) {
   if (out.length) parts.push(`${names(out)} ${out.length === 1 ? "is" : "are"} out of stock.`);
   if (due.length) parts.push(`${names(due)} ${due.length === 1 ? "is" : "are"} due.`);
   return parts.length ? parts.join(" ") : "Nothing is due to run out soon.";
+}
+
+function HeroForecast({ spend, month, days }) {
+  return (
+    <div className="hero-forecast">
+      <p className="eyebrow">Next month</p>
+      <p className="forecast-figure">{spend ? rupee(spend) : "Not yet"}</p>
+      <p className="hero-explain" title={days ? `${days} working days, with weekends counted at the company weekend weight` : undefined}>
+        {spend && month ? `Estimate for ${monthLabel(month)} if use continues at the current rate.` : "Shown after two weeks of shelf counts."}
+      </p>
+    </div>
+  );
 }
 
 function Star() {

@@ -58,6 +58,9 @@ try {
   const editor = page.getByRole("dialog", { name: "Edit Coffee" });
   await expect(editor.getByLabel("On hand today (packs)")).toBeFocused();
   assert.equal(await editor.getByLabel(/reorder/i).count(), 0);
+  // Products have no category: the name is what a product is.
+  assert.equal(await editor.getByText(/categor/i).count(), 0);
+  assert.equal(await page.getByLabel(/categor/i).count(), 0);
   // The sample data last counted 6 packs on a fixed date; a different figure
   // saves a count today on any calendar day.
   await editor.getByLabel("On hand today (packs)").fill("8");
@@ -87,8 +90,13 @@ try {
   // Settings lives only under Super Admin, not as a Record tab.
   assert.equal(await page.locator(".record-card").getByRole("button", { name: "Settings", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Purchase", exact: true }).click();
-  await page.locator(".record-form .product-row select").first().selectOption({ label: "Coffee beans" });
+  // A Purchase card picks its product from the same searchable menu as a receipt line.
+  const pickProduct = async (card, name) => {
+    await card.getByRole("button", { name: "Choose a product", exact: true }).click();
+    await card.getByRole("option", { name, exact: true }).click();
+  };
   const firstCard = page.locator(".purchase-line").first();
+  await pickProduct(firstCard, "Coffee beans");
   await firstCard.getByLabel("Number of packs for Coffee beans").fill("3");
   // Counted today already holds a purchase dated today, so the box stays at today's count.
   await expect(firstCard.getByLabel("On hand now (packs)")).toHaveValue("8");
@@ -103,13 +111,13 @@ try {
   // A second product on the same bill gets its own card.
   await page.getByRole("button", { name: "Add product", exact: true }).click();
   const secondCard = page.locator(".purchase-line").nth(1);
-  await secondCard.locator(".product-row select").selectOption({ label: "Milk" });
+  await pickProduct(secondCard, "Milk");
   // Today's count belongs to the product, not the card: with Milk on two cards
   // the box is on the first, and what was typed stays when that card goes.
   await secondCard.getByLabel("On hand now (packs)").fill("6");
   await page.getByRole("button", { name: "Add product", exact: true }).click();
   const extraCard = page.locator(".purchase-line").nth(2);
-  await extraCard.locator(".product-row select").selectOption({ label: "Milk" });
+  await pickProduct(extraCard, "Milk");
   await expect(extraCard.getByText("On hand for Milk is on its first card.", { exact: true })).toBeVisible();
   await secondCard.getByRole("button", { name: "Remove Milk", exact: true }).click();
   await expect(page.locator(".purchase-line")).toHaveCount(2);
@@ -135,9 +143,13 @@ try {
   assert.equal(purchasePosts, 0);
   page.off("request", countPurchase);
   await page.locator(".record-form .product-pick > button").first().click();
-  await page.getByRole("option", { name: /Other supplier/ }).click();
+  await page.getByRole("option", { name: /Add supplier/ }).click();
   await page.getByLabel("Supplier name", { exact: true }).fill("Browser Wholesale Pvt Ltd");
   await page.getByRole("button", { name: "Use", exact: true }).click();
+  await expect(page.locator(".record-form .product-pick > button").first()).toHaveText("Browser Wholesale Pvt Ltd");
+  // Use saves the supplier at once, before the bill is saved.
+  const listed = await page.evaluate(() => fetch("/api/suppliers", { credentials: "same-origin" }).then((response) => response.json()));
+  assert.ok(listed.suppliers.includes("Browser Wholesale Pvt Ltd"));
   // A failed read after an acknowledged save must not look like a failed
   // purchase and leave the same form ready to be submitted again.
   await page.route("**/api/offices", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary test outage." }) }));
@@ -295,6 +307,27 @@ try {
   await page.getByText("Discarded lines take their share", { exact: true }).click();
   await expect(share).toBeChecked();
   await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹65.14");
+  // A product the reading missed gets a line of its own, with no product until one is picked.
+  const patches = [];
+  const watchPatch = (request) => { if (request.method() === "PATCH" && request.url().includes("/receipt-readings/")) patches.push(request.postDataJSON()); };
+  page.on("request", watchPatch);
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  const added = page.locator(".receipt-line", { hasText: "Added by you" });
+  await expect(added.getByRole("button", { name: "Choose a product", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add these purchases", exact: true }).click();
+  await expect(page.getByText("Choose a product on each line you added, or remove it.", { exact: true })).toBeVisible();
+  await added.getByRole("button", { name: "Choose a product", exact: true }).click();
+  await added.getByRole("option", { name: "Tea", exact: true }).click();
+  await added.getByLabel("Price per pack (INR) for Tea").fill("10");
+  await added.getByLabel("Number of packs for Tea").fill("1");
+  // ₹70 kept of ₹80 on the bill takes ₹5.25 of the ₹6.
+  await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹75.25");
+  await expect.poll(() => patches.some((body) => body.lines.some((line) => line.added === true && line.packs === "1" && /^added-[a-z0-9]{6,}$/i.test(line.id)))).toBe(true);
+  // Removed again, it was never on the bill and takes no share.
+  await added.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(added).toHaveCount(0);
+  await expect(page.locator(".receipt-sum .bill-total")).toContainText("₹65.14");
+  page.off("request", watchPatch);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await expect(amul.getByText("Printed ₹60.00", { exact: true })).toBeVisible();

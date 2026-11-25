@@ -7,8 +7,8 @@ from .conftest import switch_on_gemini
 from .test_receipt_read import PNG, api, settle, submit_message, upload  # noqa: F401 (api is a fixture)
 
 
-async def product(api, office, name, category=None):
-    body = {"name": name, **({"category": category} if category else {})}
+async def product(api, office, name):
+    body = {"name": name}
     return (await api(f"/api/offices/{office}/products", actor="manager", method="POST", body=body)).json()["productId"]
 
 
@@ -51,7 +51,7 @@ def test_supplier_names_match_across_spellings():
 
 async def test_one_bill_saves_several_products_with_sizes_on_credit(api, db, offices):
     office = offices["Ahmedabad"]
-    milk, sticks = await product(api, office, "Toned milk", "Dairy"), await product(api, office, "Stirrers")
+    milk, sticks = await product(api, office, "Toned milk"), await product(api, office, "Stirrers")
     path = f"/api/offices/{office}/purchases/batch"
     lines = [
         {"productId": milk, "packs": 12, "pricePerPack": "27", "packSize": "500", "packUnit": "ml", "onHand": 14},
@@ -209,13 +209,13 @@ async def test_receipt_reading_proposes_supplier_product_and_pack_size(api, db, 
 
     changed = await api(path, actor="manager", method="PATCH", body={"supplier": "  Local Dairy  ", "onCredit": True, "lines": [{**milk, "packSize": "1", "packUnit": "L"}, stirrers]})
     assert changed.json()["result"]["supplier"] == "Local Dairy" and changed.json()["result"]["lines"][0]["packUnit"] == "L"
-    keys = ("id", "productId", "newName", "newCategory", "packs", "pricePerPack", "packSize", "packUnit")
+    keys = ("id", "productId", "newName", "packs", "pricePerPack", "packSize", "packUnit")
     lines = [{k: line[k] for k in keys} for line in changed.json()["result"]["lines"]]
     no_supplier = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "supplier": "", "onCredit": True, "lines": lines})
     assert no_supplier.status_code == 422 and no_supplier.json()["error"] == "Choose the supplier for a credit purchase."
     saved = await api(path + "/save", actor="manager", method="POST", body={"date": "2026-09-18", "supplier": "Local Dairy", "onCredit": True, "lines": lines})
     assert saved.status_code == 200
-    rows = {r["name"]: r for r in await db.all("SELECT p.name, p.category, u.pack_size, u.pack_unit, u.supplier, u.on_credit FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id WHERE u.supplier = 'Local Dairy'")}
+    rows = {r["name"]: r for r in await db.all("SELECT p.name, u.pack_size, u.pack_unit, u.supplier, u.on_credit FROM pantry_purchase u JOIN pantry_product p ON p.id = u.product_id WHERE u.supplier = 'Local Dairy'")}
     assert set(rows) == {"Milk", "Other"}
     assert (rows["Milk"]["pack_size"], rows["Milk"]["pack_unit"]) == ("1", "L")
     assert rows["Other"]["pack_unit"] == "N.A" and rows["Other"]["on_credit"] == 1
@@ -489,30 +489,59 @@ async def test_migration_copies_suppliers_and_payment_proofs(tmp_path):
         await payables.record_payment(source, admin, office["id"], {"supplier": "Acme", "date": "2026-09-20", "amount": "40"}, {"fileName": "upi.png", "bytes": PNG})
     finally:
         await source.close()
+    # A backup taken while products still had categories: the copy leaves them out.
+    with sqlite3.connect(file) as old:
+        old.execute("ALTER TABLE pantry_product ADD COLUMN category TEXT")
+        old.execute("UPDATE pantry_product SET category = 'Snacks'")
+        old.execute("CREATE TABLE product_category (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL)")
+        old.execute("INSERT INTO product_category VALUES ('c1', 'Snacks', 'system', '2026-09-01T00:00:00Z')")
+    old.close()
     snapshot = migration.inspect_migration(file, data_directory() / "receipts")
-    assert (snapshot["counts"]["supplier"], snapshot["counts"]["credit_payment"]) == (1, 1)
+    assert (snapshot["counts"]["supplier"], snapshot["counts"]["credit_payment"]) == (1, 1) and "product_category" not in snapshot["counts"]
     proof = snapshot["rows"]["credit_payment"][0]["blob_path"]
     assert proof.startswith("legacy-payment-") and any(r["name"] == proof and r["bytes"] == PNG for r in snapshot["receipts"])
-    snapshot["rows"]["product_category"].append({"id": "custom-category", "name": "Office Snacks", "created_by": "someone", "created_at": "2026-09-01T00:00:00.000Z"})
-    # A fresh target already holds the default categories, as every new database
-    # does. The copy still goes through; categories are merged by name. The
-    # SQLite target stands in for PostgreSQL, which this check does not need.
+    # The SQLite target stands in for PostgreSQL, which this check does not need.
     target = await core.open_database(tmp_path / "target.sqlite", seed="none")
     try:
-        defaults = (await target.get("SELECT count(*) AS n FROM product_category"))["n"]
-        assert defaults > 0
         target.dialect = "postgres"
         assert await migration.migrate_snapshot(target, snapshot) == snapshot["counts"]
         assert (await target.get("SELECT name FROM supplier"))["name"] == "Acme"
         moved = await target.get("SELECT supplier, amount, blob_path FROM credit_payment")
         assert (moved["supplier"], moved["amount"], moved["blob_path"]) == ("Acme", "40.00", proof)
-        assert (await target.get("SELECT count(*) AS n FROM product_category"))["n"] == defaults + 1
+        assert "Biscuits" in {r["name"] for r in await target.all("SELECT name FROM pantry_product")}
+        assert "category" not in {r["name"] for r in await target.all("PRAGMA table_info(pantry_product)")}
     finally:
         await target.close()
     # A backup from before suppliers and payments copies none of them.
     with sqlite3.connect(file) as old:
-        for table in ("supplier", "credit_payment", "product_category"):
+        for table in ("supplier", "credit_payment"):
             old.execute(f"DROP TABLE {table}")
     old.close()
     older = migration.inspect_migration(file, data_directory() / "receipts")
-    assert (older["counts"]["supplier"], older["counts"]["credit_payment"], older["counts"]["product_category"]) == (0, 0, 0)
+    assert (older["counts"]["supplier"], older["counts"]["credit_payment"]) == (0, 0)
+
+
+async def test_a_supplier_added_from_the_picker_is_saved_at_once(api, db, offices):
+    office = offices["Ahmedabad"]
+    path = f"/api/offices/{office}/suppliers"
+    added = await api(path, actor="manager", method="POST", body={"name": "  Corner   Shop Pvt. Ltd. "})
+    assert added.status_code == 201 and added.json() == {"name": "Corner Shop Pvt. Ltd.", "created": True}
+    # Listed for every office straight away, before any bill names it.
+    assert (await api("/api/suppliers", actor="reader")).json()["suppliers"] == ["Corner Shop Pvt. Ltd."]
+    # Another spelling of a listed supplier returns that one instead of adding a second.
+    again = await api(path, actor="admin", method="POST", body={"name": "corner shop private limited"})
+    assert again.status_code == 201 and again.json() == {"name": "Corner Shop Pvt. Ltd.", "created": False}
+    assert (await db.get("SELECT count(*) AS n FROM supplier"))["n"] == 1
+    assert (await db.get("SELECT count(*) AS n FROM operation WHERE action = 'supplier.create' AND office_id = ?", office))["n"] == 1
+    for name in ("", " - ", None, "x" * 121):
+        assert (await api(path, actor="manager", method="POST", body={"name": name})).status_code == 422
+    # Only people who can record purchases at that office can add one.
+    assert (await api(path, actor="reader", method="POST", body={"name": "Reader shop"})).status_code in (403, 404)
+    assert (await api(path, actor="observer", method="POST", body={"name": "Observer shop"})).status_code == 403
+    assert (await api(f"/api/offices/{offices['Pune']}/suppliers", actor="manager", method="POST", body={"name": "Pune shop"})).status_code == 404
+    assert (await api("/api/offices/no-such-office/suppliers", actor="admin", method="POST", body={"name": "Ghost shop"})).status_code == 404
+    assert (await api("/api/suppliers", actor="reader")).json()["suppliers"] == ["Corner Shop Pvt. Ltd."]
+    # A bill naming it later reuses the listed name.
+    rice = await product(api, office, "Picker rice")
+    saved = await api(f"/api/offices/{office}/purchases/batch", actor="manager", method="POST", body=batch([{"productId": rice, "packs": 1, "pricePerPack": "10"}], supplier="CORNER SHOP PVT LTD"))
+    assert saved.status_code == 201 and saved.json()["supplier"] == "Corner Shop Pvt. Ltd."
